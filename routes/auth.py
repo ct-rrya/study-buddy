@@ -56,19 +56,14 @@ def register():
             email=email,
             password_hash=generate_password_hash(password),
             verification_token=token,
-            email_verified=False
+            email_verified=True  # Auto-verify for now (Render blocks SMTP)
         )
         db.session.add(user)
         db.session.commit()
         
-        # Send verification email
-        try:
-            send_verification_email(user, token)
-            flash('Registration successful! Please check your email to verify your account.', 'success')
-        except Exception as e:
-            # If email fails, still allow registration but warn user
-            print(f"Email error: {e}")
-            flash('Account created but email could not be sent. Contact support.', 'warning')
+        # TODO: Re-enable email verification when using a proper email service
+        # For now, auto-verify since Render free tier blocks SMTP
+        flash('Registration successful! You can now login.', 'success')
         
         return redirect(url_for('auth.login'))
     
