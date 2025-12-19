@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Chat with {{ friend.username }} - Study Buddy{% endblock %}
+
+{% block content %}
+<div class="chat-container" data-theme="{{ chat_theme or 'purple' }}">
+    <div class="chat-header">
+        <a href="{{ url_for('social.friends_page') }}" class="back-btn">
+            <i class="iconoir-arrow-left"></i> Back
+        </a>
+        <div class="chat-header-info">
+            <img src="{{ friend.get_avatar_url() }}" alt="{{ friend.username }}" class="chat-friend-avatar">
+            <h1>{{ friend.username }}</h1>
+        </div>
+        <button class="btn btn-small theme-toggle-btn" onclick="toggleThemePicker()">
+            <i class="iconoir-palette"></i> Theme
+        </button>
+    </div>
+    
+    <div id="theme-picker" class="theme-picker hidden">
+        <div class="theme-options">
+            {% for t in ['purple', 'blue', 'green', 'pink', 'orange', 'cyan'] %}
+            <button class="theme-btn {{ 'active' if (chat_theme or 'purple') == t else '' }}" 
+                    onclick="setTheme('{{ t }}')" title="{{ t|capitalize }}">
+                <span class="theme-preview {{ t }}"></span>
+            </button>
+            {% endfor %}
+        </div>
+    </div>
+    
+    <div id="chat-messages" class="chat-messages">
+        {% for msg in messages %}
+        <div class="message {{ 'sent' if msg.sender_id == current_user.id else 'received' }}">
+            <div class="message-content">{{ msg.content }}</div>
+            <div class="message-time">{{ msg.sent_at.strftime('%H:%M') }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    
+    <div class="chat-input-container">
+        <input type="text" id="message-input" placeholder="Type a message...">
+        <button onclick="sendMessage()" class="btn btn-primary">
+            <i class="iconoir-send"></i> Send
+        </button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const friendId = {{ friend.id }};
+let lastMessageId = {{ messages[-1].id if messages else 0 }};
+
+function sendMessage() {
+    const input = document.getElementById('message-input');
+    const content = input.value.trim();
+    if (!content) return;
+    
+    fetch('/chat/send', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({receiver_id: friendId, content: content})
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            addMessage(data.message.content, true);
+            lastMessageId = data.message.id;
+            input.value = '';
+        }
+    });
+}
+
+function addMessage(content, isSent) {
+    const div = document.createElement('div');
+    div.className = `message ${isSent ? 'sent' : 'received'}`;
+    div.innerHTML = `
+        <div class="message-content">${content}</div>
+        <div class="message-time">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+    `;
+    document.getElementById('chat-messages').appendChild(div);
+    div.scrollIntoView();
+}
+
+function pollMessages() {
+    fetch(`/chat/messages/${friendId}?last_id=${lastMessageId}`)
+    .then(res => res.json())
+    .then(messages => {
+        messages.forEach(msg => {
+            if (msg.sender_id !== {{ current_user.id }}) {
+                addMessage(msg.content, false);
+            }
+            lastMessageId = Math.max(lastMessageId, msg.id);
+        });
+    });
+}
+
+function toggleThemePicker() {
+    document.getElementById('theme-picker').classList.toggle('hidden');
+}
+
+function setTheme(theme) {
+    fetch(`/chat/theme/${friendId}`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({theme: theme})
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            // Update the chat container theme
+            document.querySelector('.chat-container').dataset.theme = theme;
+            // Update active button
+            document.querySelectorAll('.theme-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelector(`.theme-btn[onclick="setTheme('${theme}')"]`).classList.add('active');
+            // Hide picker
+            document.getElementById('theme-picker').classList.add('hidden');
+            showToast('Theme updated!', 'success');
+        }
+    });
+}
+
+document.getElementById('message-input').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') sendMessage();
+});
+
+// Poll for new messages every 3 seconds
+setInterval(pollMessages, 3000);
+
+// Scroll to bottom on load
+document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight;
+</script>
+{% endblock %}

@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %}Profile - Study Buddy{% endblock %}
+
+{% block content %}
+<div class="profile-container">
+    <h1><i class="iconoir-user"></i> Your Profile</h1>
+    
+    <div class="profile-grid">
+        <section class="avatar-section">
+            <h2>Avatar</h2>
+            <div class="current-avatar">
+                <img src="{{ current_user.get_avatar_url() }}" alt="Avatar" id="avatar-preview">
+            </div>
+            
+            <div class="avatar-styles">
+                <h3>Choose a Style</h3>
+                <div class="style-options">
+                    <button class="style-btn" data-style="avataaars" title="Avataaars">
+                        <img src="https://api.dicebear.com/7.x/avataaars/svg?seed={{ current_user.username }}" alt="Avataaars">
+                    </button>
+                    <button class="style-btn" data-style="bottts" title="Bottts">
+                        <img src="https://api.dicebear.com/7.x/bottts/svg?seed={{ current_user.username }}" alt="Bottts">
+                    </button>
+                    <button class="style-btn" data-style="lorelei" title="Lorelei">
+                        <img src="https://api.dicebear.com/7.x/lorelei/svg?seed={{ current_user.username }}" alt="Lorelei">
+                    </button>
+                    <button class="style-btn" data-style="notionists" title="Notionists">
+                        <img src="https://api.dicebear.com/7.x/notionists/svg?seed={{ current_user.username }}" alt="Notionists">
+                    </button>
+                    <button class="style-btn" data-style="pixel-art" title="Pixel Art">
+                        <img src="https://api.dicebear.com/7.x/pixel-art/svg?seed={{ current_user.username }}" alt="Pixel Art">
+                    </button>
+                    <button class="style-btn" data-style="thumbs" title="Thumbs">
+                        <img src="https://api.dicebear.com/7.x/thumbs/svg?seed={{ current_user.username }}" alt="Thumbs">
+                    </button>
+                </div>
+            </div>
+            
+            <div class="avatar-randomize">
+                <h3>Randomize</h3>
+                <button onclick="randomizeAvatar()" class="btn btn-secondary">
+                    <i class="iconoir-refresh"></i> Generate New
+                </button>
+            </div>
+        </section>
+        
+        <section class="info-section">
+            <h2>Profile Info</h2>
+            <form action="{{ url_for('auth.update_profile') }}" method="POST" class="profile-form">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username" value="{{ current_user.username }}" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="email">Email</label>
+                    <input type="email" id="email" value="{{ current_user.email }}" disabled>
+                    <small>Email cannot be changed</small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="bio">Bio</label>
+                    <textarea id="bio" name="bio" rows="3" maxlength="200" 
+                        placeholder="Tell others about yourself...">{{ current_user.bio or '' }}</textarea>
+                    <small><span id="bio-count">{{ (current_user.bio or '')|length }}</span>/200</small>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">
+                    <i class="iconoir-check"></i> Save Changes
+                </button>
+            </form>
+            
+            <div class="member-since">
+                <i class="iconoir-calendar"></i> Member since {{ current_user.created_at.strftime('%B %Y') }}
+            </div>
+        </section>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentStyle = '{{ current_user.avatar_style or "avataaars" }}';
+let currentSeed = '{{ current_user.avatar_seed or current_user.username }}';
+
+document.querySelectorAll('.style-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        currentStyle = this.dataset.style;
+        updateAvatar();
+        
+        document.querySelectorAll('.style-btn').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+    });
+});
+
+function randomizeAvatar() {
+    currentSeed = Math.random().toString(36).substring(7);
+    updateAvatar();
+}
+
+function updateAvatar() {
+    const url = `https://api.dicebear.com/7.x/${currentStyle}/svg?seed=${currentSeed}`;
+    document.getElementById('avatar-preview').src = url;
+    
+    // Update all style previews with new seed
+    document.querySelectorAll('.style-btn').forEach(btn => {
+        const style = btn.dataset.style;
+        btn.querySelector('img').src = `https://api.dicebear.com/7.x/${style}/svg?seed=${currentSeed}`;
+    });
+    
+    // Save to server
+    fetch('/profile/avatar', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            type: 'dicebear',
+            style: currentStyle,
+            seed: currentSeed
+        })
+    });
+}
+
+// Bio character count
+document.getElementById('bio').addEventListener('input', function() {
+    document.getElementById('bio-count').textContent = this.value.length;
+});
+
+// Mark current style as active
+document.querySelector(`.style-btn[data-style="${currentStyle}"]`)?.classList.add('active');
+
+// Chat theme selection
+document.querySelectorAll('.theme-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const theme = this.dataset.theme;
+        
+        fetch('/profile/theme', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ theme: theme })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                showToast('Chat theme updated!', 'success');
+            }
+        });
+    });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Study Buddy Bot{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/iconoir-icons/iconoir@main/css/iconoir.css">
+</head>
+<body>
+    {% if current_user.is_authenticated %}
+    <nav class="navbar">
+        <a href="{{ url_for('dashboard.home') }}" class="nav-brand">
+            <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Study Buddy" class="nav-logo">
+        </a>
+        <div class="nav-links">
+            <a href="{{ url_for('dashboard.home') }}"><i class="iconoir-home"></i> Home</a>
+            <a href="{{ url_for('dashboard.stats') }}"><i class="iconoir-stats-up-square"></i> Dashboard</a>
+            <a href="{{ url_for('study.study_page') }}"><i class="iconoir-brain"></i> Study</a>
+            <a href="{{ url_for('social.friends_page') }}" class="nav-link-with-badge">
+                <i class="iconoir-group"></i> Friends
+                {% set notif_count = current_user.get_notification_count() %}
+                {% if notif_count > 0 %}
+                <span class="nav-badge">{{ notif_count if notif_count < 10 else '9+' }}</span>
+                {% endif %}
+            </a>
+            <a href="#" onclick="showLogoutModal(event)"><i class="iconoir-log-out"></i> Logout</a>
+        </div>
+        <a href="{{ url_for('auth.profile') }}" class="nav-user-link">
+            <img src="{{ current_user.get_avatar_url() }}" alt="Avatar" class="nav-avatar">
+            <span>{{ current_user.username }}</span>
+        </a>
+    </nav>
+    {% endif %}
+    
+    <main class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        
+        {% block content %}{% endblock %}
+    </main>
+    
+    <!-- Logout Confirmation Modal -->
+    <div id="logout-modal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-icon"><i class="iconoir-log-out"></i></div>
+            <h3>Leaving so soon?</h3>
+            <p>Are you sure you want to logout?</p>
+            <div class="modal-actions">
+                <button onclick="hideLogoutModal()" class="btn btn-secondary">Cancel</button>
+                <a href="{{ url_for('auth.logout') }}" class="btn btn-danger"><i class="iconoir-log-out"></i> Logout</a>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Toast Container -->
+    <div id="toast-container"></div>
+    
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script>
+        // Toast Notification System
+        function showToast(message, type = 'info', duration = 3000) {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            
+            const icons = {
+                success: 'iconoir-check-circle',
+                error: 'iconoir-warning-circle',
+                info: 'iconoir-info-circle',
+                warning: 'iconoir-warning-triangle'
+            };
+            
+            toast.innerHTML = `
+                <i class="${icons[type] || icons.info}"></i>
+                <span>${message}</span>
+                <button onclick="this.parentElement.remove()" class="toast-close">
+                    <i class="iconoir-xmark"></i>
+                </button>
+            `;
+            
+            container.appendChild(toast);
+            
+            // Trigger animation
+            setTimeout(() => toast.classList.add('show'), 10);
+            
+            // Auto remove
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            }, duration);
+        }
+        
+        // Confirmation Modal System
+        function showConfirmModal(title, message, onConfirm, confirmText = 'Confirm', isDanger = false) {
+            const modal = document.createElement('div');
+            modal.className = 'modal-overlay active';
+            modal.innerHTML = `
+                <div class="modal">
+                    <div class="modal-icon ${isDanger ? 'danger' : ''}">
+                        <i class="iconoir-${isDanger ? 'warning-triangle' : 'help-circle'}"></i>
+                    </div>
+                    <h3>${title}</h3>
+                    <p>${message}</p>
+                    <div class="modal-actions">
+                        <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+                        <button class="btn ${isDanger ? 'btn-danger' : 'btn-primary'}" id="confirm-btn">${confirmText}</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            
+            modal.querySelector('#confirm-btn').onclick = () => {
+                modal.remove();
+                onConfirm();
+            };
+            
+            modal.onclick = (e) => {
+                if (e.target === modal) modal.remove();
+            };
+        }
+        
+        function showLogoutModal(e) {
+            e.preventDefault();
+            document.getElementById('logout-modal').classList.add('active');
+        }
+        function hideLogoutModal() {
+            document.getElementById('logout-modal').classList.remove('active');
+        }
+        document.getElementById('logout-modal')?.addEventListener('click', function(e) {
+            if (e.target === this) hideLogoutModal();
+        });
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                hideLogoutModal();
+                document.querySelectorAll('.modal-overlay.active').forEach(m => m.remove());
+            }
+        });
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

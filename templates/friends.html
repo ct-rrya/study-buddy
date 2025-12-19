@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+{% block title %}Friends - Study Buddy{% endblock %}
+
+{% block content %}
+<div class="friends-container">
+    <h1>Study Buddies 👥</h1>
+    
+    {% if pending_requests %}
+    <section class="requests-section">
+        <h2>Friend Requests</h2>
+        <div class="requests-list">
+            {% for req in pending_requests %}
+            <div class="request-card" id="request-{{ req.id }}">
+                <img src="{{ req.sender.get_avatar_url() }}" alt="{{ req.sender.username }}" class="request-avatar-img">
+                <div class="request-info">
+                    <span class="request-name">{{ req.sender.username }}</span>
+                    <span class="request-text">wants to be your study buddy</span>
+                </div>
+                <div class="request-actions">
+                    <button onclick="acceptRequest({{ req.id }})" class="btn btn-small btn-success">Accept</button>
+                    <button onclick="declineRequest({{ req.id }})" class="btn btn-small btn-danger">Decline</button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+    
+    <section class="search-section">
+        <h2>Find Friends</h2>
+        <div class="search-box">
+            <input type="text" id="search-input" placeholder="Search by username...">
+            <button onclick="searchUsers()" class="btn btn-primary">Search</button>
+        </div>
+        <div id="search-results" class="search-results"></div>
+    </section>
+    
+    <section class="friends-list-section">
+        <h2>Your Friends</h2>
+        <div class="friends-list">
+            {% if friends %}
+                {% for friend in friends %}
+                <div class="friend-card">
+                    <div class="friend-avatar-wrapper">
+                        <img src="{{ friend.get_avatar_url() }}" alt="{{ friend.username }}" class="friend-avatar-img">
+                        {% if unread_counts.get(friend.id, 0) > 0 %}
+                        <span class="unread-dot"></span>
+                        {% endif %}
+                    </div>
+                    <div class="friend-info">
+                        <span class="friend-name">{{ friend.username }}</span>
+                        {% set last_msg = last_messages.get(friend.id) %}
+                        {% if last_msg %}
+                        <span class="friend-last-message {% if not last_msg.read and last_msg.sender_id == friend.id %}unread{% endif %}">
+                            {% if last_msg.sender_id == current_user.id %}You: {% endif %}{{ last_msg.content[:40] }}{% if last_msg.content|length > 40 %}...{% endif %}
+                        </span>
+                        {% else %}
+                        <span class="friend-last-message no-messages">No messages yet</span>
+                        {% endif %}
+                    </div>
+                    <div class="friend-actions">
+                        <a href="{{ url_for('social.chat_page', friend_id=friend.id) }}" class="btn btn-small btn-chat">
+                            <i class="iconoir-chat-bubble"></i> Chat
+                            {% if unread_counts.get(friend.id, 0) > 0 %}
+                            <span class="chat-badge">{{ unread_counts[friend.id] }}</span>
+                            {% endif %}
+                        </a>
+                        <button onclick="removeFriend({{ friend.id }})" class="btn btn-small btn-danger"><i class="iconoir-trash"></i></button>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <p class="no-data">No friends yet. Search for study buddies above!</p>
+            {% endif %}
+        </div>
+    </section>
+    
+    {% if sent_requests %}
+    <section class="sent-requests-section">
+        <h2>Pending Sent Requests</h2>
+        <div class="requests-list">
+            {% for req in sent_requests %}
+            <div class="request-card sent" id="sent-{{ req.id }}">
+                <img src="{{ req.receiver.get_avatar_url() }}" alt="{{ req.receiver.username }}" class="request-avatar-img">
+                <div class="request-info">
+                    <span class="request-name">{{ req.receiver.username }}</span>
+                    <span class="request-text">Request pending...</span>
+                </div>
+                <div class="request-actions">
+                    <button onclick="cancelRequest({{ req.id }})" class="btn btn-small">Cancel</button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function searchUsers() {
+    const query = document.getElementById('search-input').value.trim();
+    if (!query) return;
+    
+    fetch('/friends/search', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({query: query})
+    })
+    .then(res => res.json())
+    .then(users => {
+        const results = document.getElementById('search-results');
+        if (users.length === 0) {
+            results.innerHTML = '<p>No users found</p>';
+            return;
+        }
+        
+        results.innerHTML = users.map(u => {
+            let actionBtn = '';
+            if (u.is_friend) {
+                actionBtn = '<span class="badge">Already friends ✓</span>';
+            } else if (u.request_status) {
+                if (u.request_status.status === 'pending') {
+                    if (u.request_status.is_sender) {
+                        actionBtn = '<span class="badge pending">Request sent</span>';
+                    } else {
+                        actionBtn = '<span class="badge pending">Wants to add you</span>';
+                    }
+                } else if (u.request_status.status === 'declined') {
+                    actionBtn = '<span class="badge declined">Declined</span>';
+                }
+            } else {
+                actionBtn = `<button onclick="sendRequest(${u.id}, this)" class="btn btn-small">Add Friend</button>`;
+            }
+            
+            return `<div class="search-result">
+                <span>${u.username}</span>
+                ${actionBtn}
+            </div>`;
+        }).join('');
+    });
+}
+
+function sendRequest(userId, btn) {
+    fetch(`/friends/request/${userId}`, {method: 'POST'})
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            btn.outerHTML = '<span class="badge pending">Request sent ✓</span>';
+            showToast('Friend request sent!', 'success');
+        } else {
+            showToast(data.error || 'Could not send request', 'error');
+        }
+    });
+}
+
+function acceptRequest(requestId) {
+    fetch(`/friends/accept/${requestId}`, {method: 'POST'})
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showToast('Friend request accepted!', 'success');
+            setTimeout(() => location.reload(), 500);
+        }
+    });
+}
+
+function declineRequest(requestId) {
+    fetch(`/friends/decline/${requestId}`, {method: 'POST'})
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            document.getElementById('request-' + requestId).remove();
+            showToast('Request declined', 'info');
+        }
+    });
+}
+
+function cancelRequest(requestId) {
+    fetch(`/friends/cancel/${requestId}`, {method: 'POST'})
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            document.getElementById('sent-' + requestId).remove();
+            showToast('Request cancelled', 'info');
+        }
+    });
+}
+
+function removeFriend(userId) {
+    showConfirmModal(
+        'Remove Friend',
+        'Are you sure you want to remove this friend?',
+        () => {
+            fetch(`/friends/remove/${userId}`, {method: 'POST'})
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    showToast('Friend removed', 'info');
+                    setTimeout(() => location.reload(), 500);
+                }
+            });
+        },
+        'Remove',
+        true
+    );
+}
+
+document.getElementById('search-input').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') searchUsers();
+});
+</script>
+{% endblock %}

@@ -1,0 +1,624 @@
+{% extends "base.html" %}
+{% block title %}Study - Study Buddy{% endblock %}
+
+{% block content %}
+<div class="study-container">
+    <h1>Study Session 📖</h1>
+    
+    <section class="upload-section">
+        <h2>Upload Study Material</h2>
+        <p>Supported: .txt, .md, .docx, .pptx, .xlsx, .pdf</p>
+        <form id="upload-form" enctype="multipart/form-data">
+            <div class="file-input-wrapper">
+                <label for="file-input" class="file-input-label">
+                    <i class="iconoir-upload"></i>
+                    <span id="file-label-text">Choose a file or drag it here</span>
+                </label>
+                <input type="file" id="file-input" name="file" accept=".txt,.md,.docx,.pptx,.xlsx,.pdf">
+            </div>
+            <button type="submit" class="btn btn-primary"><i class="iconoir-cloud-upload"></i> Upload</button>
+        </form>
+        <div id="upload-status"></div>
+    </section>
+    
+    <section class="files-section">
+        <h2>Your Study Files</h2>
+        <div class="files-list">
+            {% if files %}
+                {% for file in files %}
+                <div class="file-card" data-file-id="{{ file.id }}">
+                    <i class="iconoir-page file-icon"></i>
+                    <span class="file-name">{{ file.original_name }}</span>
+                    <span class="file-date">{{ file.uploaded_at.strftime('%b %d') }}</span>
+                    <button class="btn btn-small" onclick="selectFile({{ file.id }}, '{{ file.original_name }}')">Study</button>
+                </div>
+                {% endfor %}
+            {% else %}
+                <p class="no-data">No files uploaded yet. Upload your study notes above!</p>
+            {% endif %}
+        </div>
+    </section>
+    
+    <section id="study-area" class="study-area hidden">
+        <div class="study-header">
+            <h2>Studying: <span id="current-file-name"></span></h2>
+            <button onclick="clearChat()" class="btn btn-small btn-danger">Clear Chat</button>
+        </div>
+        
+        <div class="bot-actions">
+            <button class="action-btn" onclick="botAction('quiz')">
+                <i class="iconoir-clipboard-check"></i> Generate Quiz
+            </button>
+            <button class="action-btn" onclick="botAction('flashcards')">
+                <i class="iconoir-book"></i> Flashcards
+            </button>
+            <button class="action-btn" onclick="botAction('question')">
+                <i class="iconoir-chat-bubble-question"></i> Ask Me a Question
+            </button>
+        </div>
+        
+        <div class="chat-area">
+            <div id="chat-messages" class="chat-messages"></div>
+            
+            <div class="chat-input-area">
+                <textarea id="user-input" placeholder="Ask about the topic or answer questions... (Shift+Enter for new line)" rows="1"></textarea>
+                <button onclick="sendMessage()" class="btn btn-primary">Send</button>
+            </div>
+        </div>
+    </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentFileId = null;
+let currentQuestion = null;
+let currentFileName = null;
+let studyStartTime = null;
+
+function selectFile(fileId, fileName) {
+    currentFileId = fileId;
+    currentFileName = fileName;
+    studyStartTime = new Date();
+    document.getElementById('current-file-name').textContent = fileName;
+    document.getElementById('study-area').classList.remove('hidden');
+    document.getElementById('chat-messages').innerHTML = '';
+    
+    // Load chat history
+    fetch(`/chat/history/${fileId}`)
+        .then(res => res.json())
+        .then(history => {
+            if (history.length > 0) {
+                history.forEach(msg => {
+                    if (msg.role === 'user') {
+                        addUserMessage(msg.content, false);
+                    } else {
+                        addBotMessage(msg.content, false);
+                    }
+                });
+                addBotMessage("Welcome back! 👋 Ready to continue studying?", false);
+            } else {
+                addBotMessage("Ayy let's go! I've got your notes loaded 📚\n\nSo what do you wanna do?\n• Hit 'Generate Quiz' and I'll test you\n• Click 'Ask Me a Question' for some practice\n• Or just ask me anything about the topic!\n\nI'm here to help you crush this! 💪", false);
+            }
+        });
+}
+
+function botAction(action) {
+    if (!currentFileId) return;
+    
+    // Show loading indicator
+    const loadingId = showLoading();
+    
+    fetch('/bot/action', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({file_id: currentFileId, action: action})
+    })
+    .then(res => res.json())
+    .then(data => {
+        hideLoading(loadingId);
+        if (data.type === 'quiz') {
+            displayQuiz(data);
+        } else if (data.type === 'flashcards') {
+            displayFlashcards(data);
+        } else if (data.type === 'message') {
+            addBotMessage(data.response);
+        } else if (data.type === 'open_question') {
+            currentQuestion = data.question;
+            addBotMessage(data.question);
+        }
+    })
+    .catch(err => {
+        hideLoading(loadingId);
+        addBotMessage("Oops, something went wrong. Try again! 😅");
+    });
+}
+
+function showLoading() {
+    const div = document.createElement('div');
+    div.className = 'message bot-message loading-message';
+    div.id = 'loading-' + Date.now();
+    div.innerHTML = '<span class="loading-dots">Thinking<span>.</span><span>.</span><span>.</span></span>';
+    document.getElementById('chat-messages').appendChild(div);
+    div.scrollIntoView();
+    return div.id;
+}
+
+function hideLoading(id) {
+    const el = document.getElementById(id);
+    if (el) el.remove();
+}
+
+function displayQuiz(data) {
+    if (data.greeting) {
+        addBotMessage(data.greeting, false);
+    }
+    let html = '<div class="quiz-container">';
+    data.questions.forEach((q, i) => {
+        // Escape quotes for data attribute
+        const safeAnswer = q.answer.replace(/"/g, '&quot;');
+        
+        // Format question - convert newlines and detect MCQ options
+        let questionHtml = q.question
+            .replace(/\n/g, '<br>')  // Convert newlines to <br>
+            .replace(/([A-D]\))/g, '<br><span class="mcq-option">$1</span>')  // Format A) B) C) D)
+            .replace(/^<br>/, '');  // Remove leading <br> if any
+        
+        html += `<div class="quiz-question" data-answer="${safeAnswer}">
+            <p><strong>Q${i+1}:</strong> ${questionHtml}</p>
+            <input type="text" class="quiz-answer" placeholder="Your answer...">
+            <div class="correct-answer hidden"></div>
+        </div>`;
+    });
+    html += '<button onclick="checkQuiz(this)" class="btn btn-primary quiz-check-btn">Check Answers</button></div>';
+    addBotMessage(html, false, true);
+}
+
+function displayFlashcards(data) {
+    let html = `
+    <div class="flashcard-container" data-current="0" data-total="${data.cards.length}">
+        <div class="flashcard-progress">
+            <span class="fc-counter">Card <span class="fc-current">1</span> of ${data.cards.length}</span>
+            <div class="fc-stats">
+                <span class="fc-knew">✓ <span class="knew-count">0</span></span>
+                <span class="fc-learning">✗ <span class="learning-count">0</span></span>
+            </div>
+        </div>
+        <div class="flashcard-deck">`;
+    
+    data.cards.forEach((card, i) => {
+        html += `
+            <div class="flashcard ${i === 0 ? 'active' : ''}" data-index="${i}">
+                <div class="flashcard-inner">
+                    <div class="flashcard-front">
+                        <p>${card.front}</p>
+                        <span class="flip-hint">Click to flip</span>
+                    </div>
+                    <div class="flashcard-back">
+                        <p>${card.back}</p>
+                    </div>
+                </div>
+            </div>`;
+    });
+    
+    html += `
+        </div>
+        <div class="flashcard-controls">
+            <button class="fc-btn fc-didnt-know" onclick="flashcardResponse(false)">
+                <i class="iconoir-xmark"></i> Still Learning
+            </button>
+            <button class="fc-btn fc-knew" onclick="flashcardResponse(true)">
+                <i class="iconoir-check"></i> Got It!
+            </button>
+        </div>
+        <div class="flashcard-nav">
+            <button class="fc-nav-btn" onclick="flashcardNav(-1)"><i class="iconoir-nav-arrow-left"></i></button>
+            <button class="fc-nav-btn" onclick="flashcardNav(1)"><i class="iconoir-nav-arrow-right"></i></button>
+        </div>
+    </div>`;
+    
+    addBotMessage("Here are your flashcards! 🎴 Click a card to flip it, then mark if you knew it or not.", false);
+    addBotMessage(html, false, true);
+    
+    // Add click handlers for flipping
+    setTimeout(() => {
+        document.querySelectorAll('.flashcard').forEach(card => {
+            card.addEventListener('click', () => card.classList.toggle('flipped'));
+        });
+    }, 100);
+}
+
+function flashcardResponse(knew) {
+    const container = document.querySelector('.flashcard-container');
+    if (!container) return;
+    
+    const current = parseInt(container.dataset.current);
+    const total = parseInt(container.dataset.total);
+    const cards = container.querySelectorAll('.flashcard');
+    
+    // Update stats
+    const knewCount = container.querySelector('.knew-count');
+    const learningCount = container.querySelector('.learning-count');
+    
+    if (knew) {
+        knewCount.textContent = parseInt(knewCount.textContent) + 1;
+        cards[current].classList.add('marked-knew');
+    } else {
+        learningCount.textContent = parseInt(learningCount.textContent) + 1;
+        cards[current].classList.add('marked-learning');
+    }
+    
+    // Move to next card
+    if (current < total - 1) {
+        cards[current].classList.remove('active');
+        cards[current + 1].classList.add('active');
+        cards[current + 1].classList.remove('flipped');
+        container.dataset.current = current + 1;
+        container.querySelector('.fc-current').textContent = current + 2;
+    } else {
+        // Finished all cards
+        const knew = parseInt(knewCount.textContent);
+        const learning = parseInt(learningCount.textContent);
+        const percent = Math.round((knew / total) * 100);
+        
+        let msg = `**Flashcard session complete!** 🎉\n\n`;
+        msg += `✓ Got it: ${knew}/${total} (${percent}%)\n`;
+        msg += `✗ Still learning: ${learning}/${total}\n\n`;
+        
+        if (percent === 100) {
+            msg += "Perfect! You've mastered these cards! 🌟";
+        } else if (percent >= 70) {
+            msg += "Great progress! Keep reviewing the ones you missed! 💪";
+        } else {
+            msg += "Keep practicing! You'll get there! 📚";
+        }
+        
+        addBotMessage(msg);
+    }
+}
+
+function flashcardNav(direction) {
+    const container = document.querySelector('.flashcard-container');
+    if (!container) return;
+    
+    const current = parseInt(container.dataset.current);
+    const total = parseInt(container.dataset.total);
+    const cards = container.querySelectorAll('.flashcard');
+    
+    const newIndex = current + direction;
+    if (newIndex >= 0 && newIndex < total) {
+        cards[current].classList.remove('active');
+        cards[newIndex].classList.add('active');
+        container.dataset.current = newIndex;
+        container.querySelector('.fc-current').textContent = newIndex + 1;
+    }
+}
+
+function checkQuiz(btn) {
+    // Find the quiz container that this button belongs to
+    const quizContainer = btn.closest('.quiz-container');
+    if (!quizContainer) {
+        console.error('Quiz container not found');
+        return;
+    }
+    
+    const questions = quizContainer.querySelectorAll('.quiz-question');
+    let correct = 0;
+    let total = questions.length;
+    
+    if (total === 0) {
+        console.error('No questions found');
+        return;
+    }
+    
+    questions.forEach(questionDiv => {
+        const input = questionDiv.querySelector('.quiz-answer');
+        const correctAnswerDiv = questionDiv.querySelector('.correct-answer');
+        const correctAnswer = questionDiv.getAttribute('data-answer') || '';
+        const userAnswer = input.value.trim();
+        
+        const isCorrect = evaluateAnswer(userAnswer, correctAnswer);
+        
+        if (isCorrect && userAnswer.length > 0) {
+            input.classList.add('correct');
+            input.classList.remove('incorrect');
+            correctAnswerDiv.classList.add('hidden');
+            correct++;
+        } else {
+            input.classList.add('incorrect');
+            input.classList.remove('correct');
+            correctAnswerDiv.innerHTML = '<span class="answer-label">Correct answer:</span> ' + correctAnswer;
+            correctAnswerDiv.classList.remove('hidden');
+        }
+        
+        input.disabled = true;
+    });
+    
+    // Disable the check button
+    btn.disabled = true;
+    btn.textContent = 'Checked!';
+    
+    // Show results
+    const percentage = Math.round((correct / total) * 100);
+    let message = 'You got **' + correct + '/' + total + '** correct (' + percentage + '%)! ';
+    if (percentage === 100) {
+        message += "🎉 Perfect score! You're crushing it!";
+    } else if (percentage >= 70) {
+        message += "💪 Great job! You know your stuff!";
+    } else if (percentage >= 50) {
+        message += "👍 Not bad! Keep studying and you'll get there!";
+    } else {
+        message += "📚 Keep practicing! Review the material and try again!";
+    }
+    addBotMessage(message);
+    
+    // Track quiz results for dashboard
+    if (currentFileId) {
+        fetch('/track/quiz', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                file_id: currentFileId,
+                total: total,
+                correct: correct
+            })
+        });
+    }
+}
+
+function evaluateAnswer(userAnswer, correctAnswer) {
+    if (!userAnswer || userAnswer.length === 0) return false;
+    
+    // Normalize both answers - lowercase, trim, remove extra spaces
+    const user = userAnswer.toLowerCase().trim().replace(/\s+/g, ' ');
+    const correct = correctAnswer.toLowerCase().trim().replace(/\s+/g, ' ');
+    
+    // Exact match
+    if (user === correct) return true;
+    
+    // For single letter answers (MCQ) - just check the letter
+    if (correct.length === 1 && /^[a-d]$/i.test(correct)) {
+        return user === correct || user.startsWith(correct + ')') || user.startsWith(correct + ' ');
+    }
+    
+    // For True/False
+    if (correct === 'true' || correct === 'false') {
+        const userBool = user.startsWith('t') ? 'true' : (user.startsWith('f') ? 'false' : user);
+        return userBool === correct;
+    }
+    
+    // Extract key words from correct answer (remove common words)
+    const stopWords = ['the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 
+                       'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 
+                       'should', 'may', 'might', 'must', 'shall', 'can', 'to', 'of', 'in', 
+                       'for', 'on', 'with', 'at', 'by', 'from', 'as', 'into', 'through',
+                       'and', 'but', 'or', 'nor', 'so', 'yet', 'it', 'its', 'this', 'that'];
+    
+    const getKeyWords = (text) => {
+        return text.split(/\s+/)
+            .filter(word => word.length > 2 && !stopWords.includes(word))
+            .map(word => word.replace(/[.,!?;:'"()]/g, ''));
+    };
+    
+    const correctKeyWords = getKeyWords(correct);
+    const userKeyWords = getKeyWords(user);
+    
+    // If correct answer is short (1-2 key words), user must have those words
+    if (correctKeyWords.length <= 2) {
+        const hasAllKeyWords = correctKeyWords.every(keyword => 
+            user.includes(keyword) || userKeyWords.some(uw => 
+                uw.includes(keyword) || keyword.includes(uw)
+            )
+        );
+        if (hasAllKeyWords) return true;
+    }
+    
+    // For longer answers, check if user has at least 50% of key words
+    if (correctKeyWords.length > 2) {
+        let matchCount = 0;
+        correctKeyWords.forEach(keyword => {
+            if (user.includes(keyword) || userKeyWords.some(uw => 
+                uw.includes(keyword) || keyword.includes(uw)
+            )) {
+                matchCount++;
+            }
+        });
+        const matchRatio = matchCount / correctKeyWords.length;
+        if (matchRatio >= 0.5) return true;
+    }
+    
+    // Check if user answer contains the correct answer or vice versa
+    if (user.includes(correct) || correct.includes(user)) return true;
+    
+    return false;
+}
+
+function sendMessage() {
+    const input = document.getElementById('user-input');
+    const message = input.value.trim();
+    if (!message || !currentFileId) return;
+    
+    addUserMessage(message);
+    input.value = '';
+    
+    const action = currentQuestion ? 'check_answer' : 'ask';
+    const loadingId = showLoading();
+    
+    fetch('/bot/action', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            file_id: currentFileId,
+            action: action,
+            input: message,
+            question: currentQuestion
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        hideLoading(loadingId);
+        if (data.type === 'answer') {
+            addBotMessage(data.response);
+        } else if (data.type === 'feedback') {
+            addBotMessage(data.message);
+        }
+        currentQuestion = null;
+    })
+    .catch(err => {
+        hideLoading(loadingId);
+        addBotMessage("Oops, something went wrong. Try again! 😅");
+    });
+}
+
+function addBotMessage(text, save = true, isHtml = false) {
+    const div = document.createElement('div');
+    div.className = 'message bot-message';
+    if (isHtml) {
+        div.innerHTML = text;
+    } else {
+        // Parse markdown
+        div.innerHTML = parseMarkdown(text);
+    }
+    document.getElementById('chat-messages').appendChild(div);
+    div.scrollIntoView();
+    
+    // Save to database (don't save quiz HTML or welcome messages)
+    if (save && currentFileId && !isHtml && !text.includes("Welcome back!") && !text.includes("Ayy let's go!")) {
+        fetch('/chat/save', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({file_id: currentFileId, role: 'bot', content: text})
+        });
+    }
+}
+
+function parseMarkdown(text) {
+    // Code blocks with syntax highlighting
+    text = text.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+        return `<pre><code class="language-${lang || 'plaintext'}">${escapeHtml(code.trim())}</code></pre>`;
+    });
+    
+    // Inline code
+    text = text.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
+    
+    // Bold
+    text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    
+    // Italic
+    text = text.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    
+    // Headers
+    text = text.replace(/^### (.+)$/gm, '<h4>$1</h4>');
+    text = text.replace(/^## (.+)$/gm, '<h3>$1</h3>');
+    text = text.replace(/^# (.+)$/gm, '<h2>$1</h2>');
+    
+    // Lists
+    text = text.replace(/^\* (.+)$/gm, '<li>$1</li>');
+    text = text.replace(/^- (.+)$/gm, '<li>$1</li>');
+    text = text.replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>');
+    
+    // Wrap consecutive <li> in <ul>
+    text = text.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
+    
+    // Line breaks
+    text = text.replace(/\n/g, '<br>');
+    
+    // Clean up extra <br> after block elements
+    text = text.replace(/<\/(pre|ul|h[234])><br>/g, '</$1>');
+    
+    return text;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function addUserMessage(text, save = true) {
+    const div = document.createElement('div');
+    div.className = 'message user-message';
+    div.textContent = text;
+    document.getElementById('chat-messages').appendChild(div);
+    div.scrollIntoView();
+    
+    // Save to database
+    if (save && currentFileId) {
+        fetch('/chat/save', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({file_id: currentFileId, role: 'user', content: text})
+        });
+    }
+}
+
+document.getElementById('user-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+    }
+});
+
+function clearChat() {
+    if (!currentFileId) return;
+    showConfirmModal(
+        'Clear Chat',
+        'Clear all chat history for this file? This cannot be undone.',
+        () => {
+            Promise.all([
+                fetch(`/chat/clear/${currentFileId}`, {method: 'POST'}),
+                fetch(`/bot/clear-memory/${currentFileId}`, {method: 'POST'})
+            ]).then(() => {
+                document.getElementById('chat-messages').innerHTML = '';
+                addBotMessage("Chat cleared! Fresh start 🧹 What would you like to study?", false);
+                showToast('Chat history cleared', 'success');
+            });
+        },
+        'Clear',
+        true
+    );
+}
+
+// Auto-resize textarea as user types
+document.getElementById('user-input').addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 150) + 'px';
+});
+
+document.getElementById('file-input').addEventListener('change', function() {
+    const label = document.getElementById('file-label-text');
+    if (this.files.length > 0) {
+        label.innerHTML = '<span class="file-name-display">' + this.files[0].name + '</span>';
+    } else {
+        label.textContent = 'Choose a file or drag it here';
+    }
+});
+
+document.getElementById('upload-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const fileInput = document.getElementById('file-input');
+    if (!fileInput.files.length) {
+        showToast('Please select a file first', 'warning');
+        return;
+    }
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    
+    showToast('Uploading file...', 'info', 2000);
+    
+    fetch('/upload', {method: 'POST', body: formData})
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showToast('File uploaded successfully!', 'success');
+            setTimeout(() => location.reload(), 500);
+        } else {
+            showToast(data.error || 'Upload failed', 'error');
+        }
+    })
+    .catch(() => {
+        showToast('Upload failed. Please try again.', 'error');
+    });
+});
+</script>
+{% endblock %}

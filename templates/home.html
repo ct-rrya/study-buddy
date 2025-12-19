@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Home - Study Buddy{% endblock %}
+
+{% block content %}
+<div class="home-container">
+    <section class="welcome-section">
+        <h1>Welcome back! 🎉</h1>
+        <div class="streak-display">
+            <span class="streak-icon">🔥</span>
+            <span class="streak-count">{{ streak }}</span>
+            <span class="streak-label">day streak</span>
+        </div>
+    </section>
+    
+    <section class="motivation-section">
+        <div class="motivation-card">
+            <h2>Today's Motivation</h2>
+            <p class="motivation-text">{{ motivation }}</p>
+        </div>
+        
+        <div class="meme-card">
+            <h2>Study Meme of the Day 😄</h2>
+            <p class="meme-text">{{ meme }}</p>
+        </div>
+    </section>
+    
+    <section class="quick-actions">
+        <h2>Quick Actions</h2>
+        <div class="action-buttons">
+            <a href="{{ url_for('study.study_page') }}" class="action-btn">
+                <span class="action-icon-wrapper"><i class="iconoir-book-stack"></i></span>
+                <span>Start Studying</span>
+            </a>
+            <a href="{{ url_for('dashboard.stats') }}" class="action-btn">
+                <span class="action-icon-wrapper"><i class="iconoir-graph-up"></i></span>
+                <span>View Progress</span>
+            </a>
+            <a href="{{ url_for('social.friends_page') }}" class="action-btn">
+                <span class="action-icon-wrapper"><i class="iconoir-community"></i></span>
+                <span>Study Buddies</span>
+            </a>
+        </div>
+    </section>
+    
+    <section class="stats-preview">
+        <div class="stat-card">
+            <span class="stat-number">{{ total_sessions }}</span>
+            <span class="stat-label">Total Sessions</span>
+        </div>
+    </section>
+</div>
+{% endblock %}

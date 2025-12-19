@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Study Buddy{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <h1>Your Study Dashboard 📊</h1>
+    
+    <section class="stats-grid">
+        <div class="stat-card">
+            <span class="stat-icon">🔥</span>
+            <span class="stat-number">{{ streak }}</span>
+            <span class="stat-label">Day Streak</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-icon">⏱️</span>
+            <span class="stat-number">{{ total_minutes }}</span>
+            <span class="stat-label">Minutes Studied</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-icon">❓</span>
+            <span class="stat-number">{{ total_questions }}</span>
+            <span class="stat-label">Questions Answered</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-icon">🎯</span>
+            <span class="stat-number">{{ accuracy }}%</span>
+            <span class="stat-label">Accuracy</span>
+        </div>
+    </section>
+    
+    {% if total_questions > 0 %}
+    <section class="progress-section">
+        <h2>Your Progress</h2>
+        <div class="progress-bar-container">
+            <div class="progress-bar" style="width: {{ accuracy }}%"></div>
+        </div>
+        <p class="progress-text">
+            {% if accuracy >= 80 %}
+                🌟 Excellent! You're mastering the material!
+            {% elif accuracy >= 60 %}
+                📈 Good progress! Keep practicing!
+            {% elif accuracy >= 40 %}
+                💪 You're getting there! Don't give up!
+            {% else %}
+                📚 Keep studying! Every attempt makes you better!
+            {% endif %}
+        </p>
+    </section>
+    {% endif %}
+    
+    <section class="recent-sessions">
+        <h2>Recent Quiz Sessions</h2>
+        {% if sessions %}
+        <div class="sessions-list">
+            {% for session in sessions %}
+            <div class="session-card">
+                <div class="session-info">
+                    <span class="session-topic">{{ session.topic or 'General Study' }}</span>
+                    <span class="session-date">{{ session.started_at.strftime('%b %d, %Y at %H:%M') }}</span>
+                </div>
+                <div class="session-stats">
+                    <span class="session-questions">{{ session.questions_answered or 0 }} questions</span>
+                    {% if session.questions_answered %}
+                        {% set score = ((session.correct_answers or 0) / session.questions_answered * 100)|round|int %}
+                        <span class="session-score {% if score >= 70 %}good{% elif score >= 50 %}okay{% else %}needs-work{% endif %}">
+                            {{ score }}%
+                        </span>
+                    {% else %}
+                        <span class="session-score">-</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <i class="iconoir-clipboard-check empty-icon"></i>
+            <p>No quiz sessions yet!</p>
+            <p class="empty-hint">Complete a quiz to start tracking your progress.</p>
+            <a href="{{ url_for('study.study_page') }}" class="btn btn-primary"><i class="iconoir-play"></i> Start Studying</a>
+        </div>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}
