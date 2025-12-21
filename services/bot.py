@@ -1,11 +1,20 @@
 """
 Study Bot Service - Powered by Groq (Free & Fast!) with Memory!
 """
+import os
 from groq import Groq
-from config import Config
 
-# Initialize Groq client
-client = Groq(api_key=Config.GROQ_API_KEY)
+# Initialize Groq client lazily
+_client = None
+
+def get_client():
+    global _client
+    if _client is None:
+        api_key = os.environ.get('GROQ_API_KEY')
+        if not api_key:
+            raise ValueError("GROQ_API_KEY environment variable is not set")
+        _client = Groq(api_key=api_key)
+    return _client
 
 class StudyBot:
     SYSTEM_PROMPT = """You are a friendly, supportive study buddy named Buddy. You help students learn from their study materials.
@@ -51,7 +60,7 @@ IMPORTANT: When you create quizzes or ask questions, remember them! When the stu
             # Add current message
             messages.append({"role": "user", "content": user_message})
             
-            response = client.chat.completions.create(
+            response = get_client().chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=messages,
                 max_tokens=800,
