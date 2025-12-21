@@ -4,6 +4,7 @@ Vercel Serverless Entry Point
 from http.server import BaseHTTPRequestHandler
 import sys
 import os
+import tempfile
 
 # Add parent directory to path so imports work
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -21,9 +22,11 @@ from flask import Flask
 from flask_login import LoginManager
 
 # Initialize Flask app with correct paths for Vercel
+# Use /tmp for instance_path since Vercel's filesystem is read-only except /tmp
 app = Flask(__name__, 
             template_folder=os.path.join(parent_dir, 'templates'),
-            static_folder=os.path.join(parent_dir, 'static'))
+            static_folder=os.path.join(parent_dir, 'static'),
+            instance_path=tempfile.gettempdir())
 
 # Load config
 from config import Config
