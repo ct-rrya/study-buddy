@@ -3,7 +3,18 @@
 
 {% block content %}
 <div class="friends-container">
-    <h1>Study Buddies 👥</h1>
+    <div class="friends-header">
+        <h1>Study Buddies 👥</h1>
+        <div class="friends-search-inline">
+            <input type="text" id="search-input" placeholder="Search users...">
+            <button onclick="searchUsers()" class="btn btn-primary btn-small">
+                <i class="iconoir-search"></i>
+            </button>
+        </div>
+    </div>
+    
+    <!-- Search Results (hidden by default) -->
+    <div id="search-results" class="search-results"></div>
     
     {% if pending_requests %}
     <section class="requests-section">
@@ -26,13 +37,36 @@
     </section>
     {% endif %}
     
-    <section class="search-section">
-        <h2>Find Friends</h2>
-        <div class="search-box">
-            <input type="text" id="search-input" placeholder="Search by username...">
-            <button onclick="searchUsers()" class="btn btn-primary">Search</button>
+    <!-- Group Chats Section -->
+    <section class="group-chats-section">
+        <div class="section-header-inline">
+            <h2>Group Chats</h2>
+            <button onclick="showCreateGroupModal()" class="btn btn-primary btn-small">
+                <i class="iconoir-plus"></i> New Group
+            </button>
         </div>
-        <div id="search-results" class="search-results"></div>
+        <div class="group-chats-list">
+            {% if group_chats %}
+                {% for group in group_chats %}
+                <a href="{{ url_for('social.group_chat_page', group_id=group.id) }}" class="group-card" style="text-decoration: none; color: inherit;">
+                    <div class="group-avatar" style="{% if group.avatar_url %}background-image: url('{{ group.avatar_url }}'); background-size: cover;{% endif %}">
+                        {% if not group.avatar_url %}<i class="iconoir-group"></i>{% endif %}
+                    </div>
+                    <div class="group-info">
+                        <span class="group-name">{{ group.name }}</span>
+                        <span class="group-members">{{ group.members|length }} members</span>
+                    </div>
+                    <div class="group-actions">
+                        <span class="btn btn-small btn-chat">
+                            <i class="iconoir-chat-bubble"></i> Chat
+                        </span>
+                    </div>
+                </a>
+                {% endfor %}
+            {% else %}
+                <p class="no-data">No group chats yet. Create one with your friends!</p>
+            {% endif %}
+        </div>
     </section>
     
     <section class="friends-list-section">
@@ -95,6 +129,38 @@
     </section>
     {% endif %}
 </div>
+
+<!-- Create Group Modal -->
+<div id="create-group-modal" class="modal-overlay">
+    <div class="modal">
+        <h3><i class="iconoir-group"></i> Create Group Chat</h3>
+        <div class="modal-body">
+            <div class="form-group">
+                <label>Group Name</label>
+                <input type="text" id="group-name-input" placeholder="e.g., Study Squad">
+            </div>
+            <div class="form-group">
+                <label>Select Friends (minimum 2)</label>
+                <div class="friend-select-list">
+                    {% for friend in friends %}
+                    <label class="friend-select-item">
+                        <input type="checkbox" name="group-members" value="{{ friend.id }}">
+                        <img src="{{ friend.get_avatar_url() }}" alt="{{ friend.username }}" class="friend-select-avatar">
+                        <span>{{ friend.username }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+                {% if not friends %}
+                <p class="no-data">You need friends to create a group chat!</p>
+                {% endif %}
+            </div>
+        </div>
+        <div class="modal-actions">
+            <button class="btn btn-secondary" onclick="hideCreateGroupModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="createGroup()" {% if not friends %}disabled{% endif %}>Create Group</button>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -112,7 +178,8 @@ function searchUsers() {
     .then(users => {
         const results = document.getElementById('search-results');
         if (users.length === 0) {
-            results.innerHTML = '<p>No users found</p>';
+            results.innerHTML = '<p class="search-no-results">No users found</p>';
+            results.classList.add('active');
             return;
         }
         
@@ -139,6 +206,7 @@ function searchUsers() {
                 ${actionBtn}
             </div>`;
         }).join('');
+        results.classList.add('active');
     });
 }
 
@@ -161,9 +229,73 @@ function acceptRequest(requestId) {
     .then(data => {
         if (data.success) {
             showToast('Friend request accepted!', 'success');
-            setTimeout(() => location.reload(), 500);
+            
+            // Animate out the request card
+            const requestCard = document.getElementById('request-' + requestId);
+            if (requestCard) {
+                requestCard.style.transition = 'all 0.3s ease';
+                requestCard.style.opacity = '0';
+                requestCard.style.transform = 'translateX(-20px)';
+                setTimeout(() => {
+                    requestCard.remove();
+                    // Check if requests section is empty
+                    const requestsList = document.querySelector('.requests-section .requests-list');
+                    if (requestsList && requestsList.children.length === 0) {
+                        document.querySelector('.requests-section').remove();
+                    }
+                }, 300);
+            }
+            
+            // Fetch and add the new friend to the list
+            fetch(`/friends/get-friend-card/${data.friend_id}`)
+            .then(res => res.json())
+            .then(friendData => {
+                if (friendData.success) {
+                    addFriendCard(friendData.friend);
+                }
+            });
         }
     });
+}
+
+function addFriendCard(friend) {
+    const friendsList = document.querySelector('.friends-list');
+    if (!friendsList) return;
+    
+    // Remove "no friends" message if present
+    const noData = friendsList.querySelector('.no-data');
+    if (noData) noData.remove();
+    
+    const card = document.createElement('div');
+    card.className = 'friend-card';
+    card.id = `friend-${friend.id}`;
+    card.style.opacity = '0';
+    card.style.transform = 'translateX(20px)';
+    card.style.transition = 'all 0.3s ease';
+    
+    card.innerHTML = `
+        <div class="friend-avatar-wrapper">
+            <img src="${friend.avatar_url}" alt="${friend.username}" class="friend-avatar-img">
+        </div>
+        <div class="friend-info">
+            <span class="friend-name">${friend.username}</span>
+            <span class="friend-last-message no-messages">No messages yet</span>
+        </div>
+        <div class="friend-actions">
+            <a href="/chat/${friend.id}" class="btn btn-small btn-chat">
+                <i class="iconoir-chat-bubble"></i> Chat
+            </a>
+            <button onclick="removeFriend(${friend.id})" class="btn btn-small btn-danger"><i class="iconoir-trash"></i></button>
+        </div>
+    `;
+    
+    friendsList.insertBefore(card, friendsList.firstChild);
+    
+    // Animate in
+    setTimeout(() => {
+        card.style.opacity = '1';
+        card.style.transform = 'translateX(0)';
+    }, 10);
 }
 
 function declineRequest(requestId) {
@@ -171,7 +303,20 @@ function declineRequest(requestId) {
     .then(res => res.json())
     .then(data => {
         if (data.success) {
-            document.getElementById('request-' + requestId).remove();
+            const card = document.getElementById('request-' + requestId);
+            if (card) {
+                card.style.transition = 'all 0.3s ease';
+                card.style.opacity = '0';
+                card.style.transform = 'translateX(-20px)';
+                setTimeout(() => {
+                    card.remove();
+                    // Check if requests section is empty
+                    const requestsList = document.querySelector('.requests-section .requests-list');
+                    if (requestsList && requestsList.children.length === 0) {
+                        document.querySelector('.requests-section').remove();
+                    }
+                }, 300);
+            }
             showToast('Request declined', 'info');
         }
     });
@@ -182,7 +327,20 @@ function cancelRequest(requestId) {
     .then(res => res.json())
     .then(data => {
         if (data.success) {
-            document.getElementById('sent-' + requestId).remove();
+            const card = document.getElementById('sent-' + requestId);
+            if (card) {
+                card.style.transition = 'all 0.3s ease';
+                card.style.opacity = '0';
+                card.style.transform = 'translateX(-20px)';
+                setTimeout(() => {
+                    card.remove();
+                    // Check if sent requests section is empty
+                    const sentList = document.querySelector('.sent-requests-section .requests-list');
+                    if (sentList && sentList.children.length === 0) {
+                        document.querySelector('.sent-requests-section').remove();
+                    }
+                }, 300);
+            }
             showToast('Request cancelled', 'info');
         }
     });
@@ -198,7 +356,24 @@ function removeFriend(userId) {
             .then(data => {
                 if (data.success) {
                     showToast('Friend removed', 'info');
-                    setTimeout(() => location.reload(), 500);
+                    
+                    // Animate out the friend card
+                    const friendCard = document.getElementById('friend-' + userId) || 
+                                       document.querySelector(`.friend-card[onclick*="${userId}"]`) ||
+                                       findFriendCard(userId);
+                    if (friendCard) {
+                        friendCard.style.transition = 'all 0.3s ease';
+                        friendCard.style.opacity = '0';
+                        friendCard.style.transform = 'translateX(-20px)';
+                        setTimeout(() => {
+                            friendCard.remove();
+                            // Check if friends list is empty
+                            const friendsList = document.querySelector('.friends-list');
+                            if (friendsList && friendsList.querySelectorAll('.friend-card').length === 0) {
+                                friendsList.innerHTML = '<p class="no-data">No friends yet. Search for study buddies above!</p>';
+                            }
+                        }, 300);
+                    }
                 }
             });
         },
@@ -207,8 +382,124 @@ function removeFriend(userId) {
     );
 }
 
+function findFriendCard(userId) {
+    const cards = document.querySelectorAll('.friend-card');
+    for (const card of cards) {
+        const removeBtn = card.querySelector(`button[onclick*="removeFriend(${userId})"]`);
+        if (removeBtn) return card;
+    }
+    return null;
+}
+
+// Group Chat Functions
+function showCreateGroupModal() {
+    document.getElementById('create-group-modal').classList.add('active');
+}
+
+function hideCreateGroupModal() {
+    document.getElementById('create-group-modal').classList.remove('active');
+    document.getElementById('group-name-input').value = '';
+    document.querySelectorAll('input[name="group-members"]').forEach(cb => cb.checked = false);
+}
+
+function createGroup() {
+    const name = document.getElementById('group-name-input').value.trim();
+    const selectedMembers = Array.from(document.querySelectorAll('input[name="group-members"]:checked'))
+        .map(cb => parseInt(cb.value));
+    
+    if (!name) {
+        showToast('Please enter a group name', 'warning');
+        return;
+    }
+    
+    if (selectedMembers.length < 2) {
+        showToast('Please select at least 2 friends', 'warning');
+        return;
+    }
+    
+    fetch('/groups/create', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            name: name,
+            member_ids: selectedMembers
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showToast('Group created!', 'success');
+            hideCreateGroupModal();
+            
+            // Add the new group card dynamically
+            addGroupCard(data);
+        } else {
+            showToast(data.error || 'Could not create group', 'error');
+        }
+    })
+    .catch(() => {
+        showToast('Error creating group', 'error');
+    });
+}
+
+function addGroupCard(groupData) {
+    const groupsList = document.querySelector('.group-chats-list');
+    if (!groupsList) return;
+    
+    // Remove "no groups" message if present
+    const noData = groupsList.querySelector('.no-data');
+    if (noData) noData.remove();
+    
+    const card = document.createElement('a');
+    card.className = 'group-card';
+    card.href = `/groups/${groupData.group_id}`;
+    card.id = `group-${groupData.group_id}`;
+    card.style.textDecoration = 'none';
+    card.style.color = 'inherit';
+    card.style.opacity = '0';
+    card.style.transform = 'translateX(20px)';
+    card.style.transition = 'all 0.3s ease';
+    
+    card.innerHTML = `
+        <div class="group-avatar">
+            <i class="iconoir-group"></i>
+        </div>
+        <div class="group-info">
+            <span class="group-name">${groupData.name}</span>
+            <span class="group-members">${groupData.member_count || 3} members</span>
+        </div>
+        <div class="group-actions">
+            <span class="btn btn-small btn-chat">
+                <i class="iconoir-chat-bubble"></i> Chat
+            </span>
+        </div>
+    `;
+    
+    groupsList.insertBefore(card, groupsList.firstChild);
+    
+    // Animate in
+    setTimeout(() => {
+        card.style.opacity = '1';
+        card.style.transform = 'translateX(0)';
+    }, 10);
+}
+
 document.getElementById('search-input').addEventListener('keypress', (e) => {
     if (e.key === 'Enter') searchUsers();
+});
+
+// Close search results when clicking outside
+document.addEventListener('click', (e) => {
+    const searchResults = document.getElementById('search-results');
+    const searchInput = document.getElementById('search-input');
+    if (!searchResults.contains(e.target) && e.target !== searchInput && !e.target.closest('.friends-search-inline')) {
+        searchResults.classList.remove('active');
+    }
+});
+
+// Close modal on outside click
+document.getElementById('create-group-modal').addEventListener('click', function(e) {
+    if (e.target === this) hideCreateGroupModal();
 });
 </script>
 {% endblock %}

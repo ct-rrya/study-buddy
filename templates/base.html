@@ -8,6 +8,15 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/mobile.css') }}" media="(max-width: 768px)">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/iconoir-icons/iconoir@main/css/iconoir.css">
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script>
+        // Apply saved theme immediately to prevent flash
+        (function() {
+            const savedTheme = localStorage.getItem('theme') || 'dark';
+            if (savedTheme === 'light') {
+                document.documentElement.setAttribute('data-theme', 'light');
+            }
+        })();
+    </script>
 </head>
 <body>
     {% if current_user.is_authenticated %}
@@ -28,10 +37,15 @@
             </a>
             <a href="#" onclick="showLogoutModal(event)"><i class="iconoir-log-out"></i> Logout</a>
         </div>
-        <a href="{{ url_for('auth.profile') }}" class="nav-user-link">
-            <img src="{{ current_user.get_avatar_url() }}" alt="Avatar" class="nav-avatar">
-            <span>{{ current_user.username }}</span>
-        </a>
+        <div class="nav-right">
+            <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
+                <i class="iconoir-sun-light" id="theme-icon"></i>
+            </button>
+            <a href="{{ url_for('auth.profile') }}" class="nav-user-link">
+                <img src="{{ current_user.get_avatar_url() }}" alt="Avatar" class="nav-avatar">
+                <span>{{ current_user.username }}</span>
+            </a>
+        </div>
     </nav>
     {% endif %}
     
@@ -114,6 +128,29 @@
     </script>
     {% endif %}
     <script>
+        // Theme Toggle
+        function toggleTheme() {
+            const html = document.documentElement;
+            const currentTheme = html.getAttribute('data-theme');
+            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            
+            html.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            updateThemeIcon(newTheme);
+        }
+        
+        function updateThemeIcon(theme) {
+            const icon = document.getElementById('theme-icon');
+            if (icon) {
+                icon.className = theme === 'light' ? 'iconoir-half-moon' : 'iconoir-sun-light';
+            }
+        }
+        
+        // Set icon on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            const savedTheme = localStorage.getItem('theme') || 'dark';
+            updateThemeIcon(savedTheme);
+        });
         // Toast Notification System
         function showToast(message, type = 'info', duration = 3000) {
             const container = document.getElementById('toast-container');

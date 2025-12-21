@@ -3,8 +3,9 @@
 
 {% block content %}
 <div class="dashboard-container">
-    <h1>Your Study Dashboard</h1>
+    <h1>Your Study Dashboard 📊</h1>
     
+    <!-- Stats Cards -->
     <section class="stats-grid">
         <div class="stat-card">
             <span class="stat-icon">🔥</span>
@@ -28,26 +29,72 @@
         </div>
     </section>
     
-    {% if total_questions > 0 %}
-    <section class="progress-section">
-        <h2>Your Progress</h2>
-        <div class="progress-bar-container">
-            <div class="progress-bar" style="width: {{ accuracy }}%"></div>
+    <!-- Weekly Activity Chart -->
+    <section class="chart-section">
+        <h2>Weekly Activity</h2>
+        <div class="chart-container">
+            <canvas id="weeklyChart"></canvas>
         </div>
-        <p class="progress-text">
-            {% if accuracy >= 80 %}
-                🌟 Excellent! You're mastering the material!
-            {% elif accuracy >= 60 %}
-                📈 Good progress! Keep practicing!
-            {% elif accuracy >= 40 %}
-                💪 You're getting there! Don't give up!
-            {% else %}
-                📚 Keep studying! Every attempt makes you better!
-            {% endif %}
-        </p>
     </section>
-    {% endif %}
     
+    <!-- Study Zone - Subjects -->
+    <section class="subjects-section">
+        <div class="section-header">
+            <h2>📚 My Study Zone</h2>
+            <button class="btn btn-primary btn-small" onclick="showAddSubjectModal()">
+                <i class="iconoir-plus"></i> Add Subject
+            </button>
+        </div>
+        
+        {% if subjects %}
+        <div class="subjects-grid">
+            {% for subject in subjects %}
+            <div class="subject-card" style="--subject-color: {{ subject.color }}">
+                <div class="subject-header">
+                    <i class="iconoir-{{ subject.iconoir_icon }} subject-icon-iconoir"></i>
+                    <span class="subject-name">{{ subject.name }}</span>
+                    <button class="subject-delete" onclick="deleteSubject({{ subject.id }}, '{{ subject.name }}')" title="Delete">
+                        <i class="iconoir-trash"></i>
+                    </button>
+                </div>
+                <div class="subject-stats">
+                    <div class="subject-stat">
+                        <span class="stat-value">{{ subject.sessions }}</span>
+                        <span class="stat-name">Sessions</span>
+                    </div>
+                    <div class="subject-stat">
+                        <span class="stat-value">{{ subject.questions }}</span>
+                        <span class="stat-name">Questions</span>
+                    </div>
+                    <div class="subject-stat">
+                        <span class="stat-value">{{ subject.accuracy }}%</span>
+                        <span class="stat-name">Accuracy</span>
+                    </div>
+                </div>
+                <div class="subject-progress-bar">
+                    <div class="progress-fill" style="width: {{ subject.accuracy }}%; background: {{ subject.color }}"></div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <!-- Subject Progress Chart -->
+        {% if subjects|length > 0 %}
+        <div class="chart-container subject-chart">
+            <canvas id="subjectChart"></canvas>
+        </div>
+        {% endif %}
+        {% else %}
+        <div class="empty-subjects">
+            <p>No subjects added yet! Add your study subjects to track progress.</p>
+            <button class="btn btn-primary" onclick="showAddSubjectModal()">
+                <i class="iconoir-plus"></i> Add Your First Subject
+            </button>
+        </div>
+        {% endif %}
+    </section>
+    
+    <!-- Recent Sessions -->
     <section class="recent-sessions">
         <h2>Recent Quiz Sessions</h2>
         {% if sessions %}
@@ -82,4 +129,308 @@
         {% endif %}
     </section>
 </div>
+
+<!-- Add Subject Modal -->
+<div id="add-subject-modal" class="modal-overlay">
+    <div class="modal">
+        <h3>Add New Subject</h3>
+        <div class="modal-body">
+            <!-- Default Subjects -->
+            <div class="default-subjects">
+                <p class="modal-label">Quick Add:</p>
+                <div class="default-subjects-grid">
+                    {% for subj in default_subjects %}
+                    <button class="default-subject-btn" onclick="addDefaultSubject('{{ subj.name }}', '{{ subj.icon }}', '{{ subj.color }}', '{{ subj.iconoir }}')" 
+                            style="--btn-color: {{ subj.color }}">
+                        <i class="iconoir-{{ subj.iconoir }}"></i> {{ subj.name }}
+                    </button>
+                    {% endfor %}
+                </div>
+            </div>
+            
+            <div class="divider"><span>or create custom</span></div>
+            
+            <!-- Custom Subject Form -->
+            <div class="custom-subject-form">
+                <div class="form-group">
+                    <label>Subject Name</label>
+                    <input type="text" id="subject-name" placeholder="e.g., Calculus, Spanish...">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Icon (emoji)</label>
+                        <input type="text" id="subject-icon" value="📚" maxlength="2">
+                    </div>
+                    <div class="form-group">
+                        <label>Color</label>
+                        <input type="color" id="subject-color" value="#8b5cf6">
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-actions">
+            <button class="btn btn-secondary" onclick="hideAddSubjectModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="addCustomSubject()">Add Subject</button>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Weekly Chart Data
+const weeklyData = {{ weekly_data | tojson }};
+const subjectData = {{ subjects | tojson }};
+
+// Get computed colors for charts (with reliable fallbacks)
+const computedStyle = getComputedStyle(document.documentElement);
+const textColor = computedStyle.getPropertyValue('--text').trim() || '#e2e8f0';
+const textMutedColor = computedStyle.getPropertyValue('--text-muted').trim() || '#94a3b8';
+
+// Initialize Weekly Activity Chart
+const weeklyCtx = document.getElementById('weeklyChart').getContext('2d');
+const weeklyChart = new Chart(weeklyCtx, {
+    type: 'bar',
+    data: {
+        labels: weeklyData.labels,
+        datasets: [{
+            label: 'Questions Answered',
+            data: weeklyData.questions,
+            backgroundColor: 'rgba(139, 92, 246, 0.8)',
+            borderColor: 'rgba(139, 92, 246, 1)',
+            borderWidth: 1,
+            borderRadius: 8
+        }, {
+            label: 'Correct Answers',
+            data: weeklyData.correct,
+            backgroundColor: 'rgba(16, 185, 129, 0.8)',
+            borderColor: 'rgba(16, 185, 129, 1)',
+            borderWidth: 1,
+            borderRadius: 8
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                labels: { 
+                    color: textColor,
+                    font: { size: 13, weight: '500' }
+                }
+            }
+        },
+        scales: {
+            y: {
+                beginAtZero: true,
+                ticks: { color: textMutedColor },
+                grid: { color: 'rgba(255,255,255,0.1)' }
+            },
+            x: {
+                ticks: { color: textMutedColor },
+                grid: { display: false }
+            }
+        }
+    }
+});
+
+// Initialize Subject Progress Chart (if subjects exist)
+if (subjectData.length > 0) {
+    const subjectCtx = document.getElementById('subjectChart').getContext('2d');
+    const subjectChart = new Chart(subjectCtx, {
+        type: 'doughnut',
+        data: {
+            labels: subjectData.map(s => s.name),
+            datasets: [{
+                data: subjectData.map(s => s.questions || 1),
+                backgroundColor: subjectData.map(s => s.color),
+                borderWidth: 2,
+                borderColor: computedStyle.getPropertyValue('--bg-card').trim() || '#1a1f35'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'right',
+                    labels: { 
+                        color: textColor,
+                        padding: 15,
+                        usePointStyle: true,
+                        font: { size: 13, weight: '500' }
+                    }
+                }
+            }
+        }
+    });
+}
+
+// Modal Functions
+function showAddSubjectModal() {
+    document.getElementById('add-subject-modal').classList.add('active');
+}
+
+function hideAddSubjectModal() {
+    document.getElementById('add-subject-modal').classList.remove('active');
+    document.getElementById('subject-name').value = '';
+}
+
+function addDefaultSubject(name, icon, color, iconoir) {
+    addSubject(name, icon, color, iconoir);
+}
+
+function addCustomSubject() {
+    const name = document.getElementById('subject-name').value.trim();
+    const icon = document.getElementById('subject-icon').value || '📚';
+    const color = document.getElementById('subject-color').value;
+    
+    if (!name) {
+        showToast('Please enter a subject name', 'warning');
+        return;
+    }
+    
+    addSubject(name, icon, color, 'book-stack');
+}
+
+function addSubject(name, icon, color, iconoir) {
+    fetch('/subjects/add', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ name, icon, color, iconoir })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showToast(`${name} added!`, 'success');
+            hideAddSubjectModal();
+            
+            // Add subject card dynamically
+            addSubjectCard(data.subject);
+        } else {
+            showToast(data.error || 'Could not add subject', 'error');
+        }
+    });
+}
+
+function addSubjectCard(subject) {
+    const grid = document.querySelector('.subjects-grid');
+    if (!grid) {
+        // If no grid exists, we need to create the structure
+        const emptyState = document.querySelector('.empty-subjects');
+        if (emptyState) {
+            const section = emptyState.parentElement;
+            emptyState.remove();
+            
+            const newGrid = document.createElement('div');
+            newGrid.className = 'subjects-grid';
+            section.querySelector('.section-header').after(newGrid);
+        }
+    }
+    
+    const targetGrid = document.querySelector('.subjects-grid');
+    if (!targetGrid) return;
+    
+    const card = document.createElement('div');
+    card.className = 'subject-card';
+    card.id = `subject-${subject.id}`;
+    card.style.cssText = `--subject-color: ${subject.color}; opacity: 0; transform: translateY(20px); transition: all 0.3s ease;`;
+    
+    card.innerHTML = `
+        <div class="subject-header">
+            <i class="iconoir-${subject.iconoir_icon} subject-icon-iconoir"></i>
+            <span class="subject-name">${subject.name}</span>
+            <button class="subject-delete" onclick="deleteSubject(${subject.id}, '${subject.name}')" title="Delete">
+                <i class="iconoir-trash"></i>
+            </button>
+        </div>
+        <div class="subject-stats">
+            <div class="subject-stat">
+                <span class="stat-value">0</span>
+                <span class="stat-name">Sessions</span>
+            </div>
+            <div class="subject-stat">
+                <span class="stat-value">0</span>
+                <span class="stat-name">Questions</span>
+            </div>
+            <div class="subject-stat">
+                <span class="stat-value">0%</span>
+                <span class="stat-name">Accuracy</span>
+            </div>
+        </div>
+        <div class="subject-progress-bar">
+            <div class="progress-fill" style="width: 0%; background: ${subject.color}"></div>
+        </div>
+    `;
+    
+    targetGrid.appendChild(card);
+    
+    // Animate in
+    setTimeout(() => {
+        card.style.opacity = '1';
+        card.style.transform = 'translateY(0)';
+    }, 10);
+}
+
+function deleteSubject(id, name) {
+    showConfirmModal(
+        'Delete Subject',
+        `Are you sure you want to delete "${name}"? This will also delete all progress data.`,
+        () => {
+            fetch(`/subjects/delete/${id}`, { method: 'POST' })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    showToast('Subject deleted', 'info');
+                    
+                    // Animate out the subject card
+                    const card = document.getElementById(`subject-${id}`) || findSubjectCard(id);
+                    if (card) {
+                        card.style.transition = 'all 0.3s ease';
+                        card.style.opacity = '0';
+                        card.style.transform = 'translateY(-20px)';
+                        setTimeout(() => {
+                            card.remove();
+                            // Check if subjects grid is empty
+                            const grid = document.querySelector('.subjects-grid');
+                            if (grid && grid.children.length === 0) {
+                                const section = grid.closest('.subjects-section');
+                                grid.remove();
+                                // Add empty state
+                                const emptyDiv = document.createElement('div');
+                                emptyDiv.className = 'empty-subjects';
+                                emptyDiv.innerHTML = `
+                                    <p>No subjects added yet! Add your study subjects to track progress.</p>
+                                    <button class="btn btn-primary" onclick="showAddSubjectModal()">
+                                        <i class="iconoir-plus"></i> Add Your First Subject
+                                    </button>
+                                `;
+                                section.appendChild(emptyDiv);
+                            }
+                        }, 300);
+                    }
+                }
+            });
+        },
+        'Delete',
+        true
+    );
+}
+
+function findSubjectCard(id) {
+    const cards = document.querySelectorAll('.subject-card');
+    for (const card of cards) {
+        const deleteBtn = card.querySelector(`button[onclick*="deleteSubject(${id}"]`);
+        if (deleteBtn) return card;
+    }
+    return null;
+}
+
+// Close modal on outside click
+document.getElementById('add-subject-modal').addEventListener('click', function(e) {
+    if (e.target === this) hideAddSubjectModal();
+});
+</script>
 {% endblock %}

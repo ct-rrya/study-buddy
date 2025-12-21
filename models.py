@@ -138,10 +138,13 @@ class StudySession(db.Model):
 class StudyFile(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    subject_id = db.Column(db.Integer, db.ForeignKey('subject.id'), nullable=True)
     filename = db.Column(db.String(255), nullable=False)
     original_name = db.Column(db.String(255), nullable=False)
     content = db.Column(db.Text)  # Extracted text content
     uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    subject = db.relationship('Subject', backref='files')
 
 class Message(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -165,3 +168,98 @@ class BotConversation(db.Model):
     
     user = db.relationship('User', backref='bot_conversations')
     file = db.relationship('StudyFile', backref='conversations')
+
+
+# Subject icon mapping to Iconoir icon names
+ICONOIR_SUBJECT_ICONS = {
+    'Mathematics': 'calculator',
+    'English': 'language',
+    'Science': 'flask',
+    'History': 'archive',
+    'Geography': 'globe',
+    'Physics': 'atom',
+    'Chemistry': 'test-tube',
+    'Biology': 'dna',
+    'Computer Science': 'code',
+    'Literature': 'book',
+    'Art': 'palette',
+    'Music': 'music-double-note',
+    'default': 'book-stack'
+}
+
+
+class Subject(db.Model):
+    """User's study subjects"""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    color = db.Column(db.String(20), default='#8b5cf6')  # Hex color for charts
+    icon = db.Column(db.String(50), default='📚')  # Emoji icon
+    iconoir_icon = db.Column(db.String(50), default='book-stack')  # Iconoir icon name
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    user = db.relationship('User', backref='subjects')
+    
+    # Default subjects that users can choose from (with Iconoir icon names)
+    DEFAULT_SUBJECTS = [
+        {'name': 'Mathematics', 'icon': '📐', 'iconoir': 'calculator', 'color': '#3b82f6'},
+        {'name': 'English', 'icon': '📝', 'iconoir': 'language', 'color': '#10b981'},
+        {'name': 'Science', 'icon': '🔬', 'iconoir': 'flask', 'color': '#8b5cf6'},
+        {'name': 'History', 'icon': '📜', 'iconoir': 'archive', 'color': '#f59e0b'},
+        {'name': 'Geography', 'icon': '🌍', 'iconoir': 'globe', 'color': '#06b6d4'},
+        {'name': 'Physics', 'icon': '⚛️', 'iconoir': 'atom', 'color': '#6366f1'},
+        {'name': 'Chemistry', 'icon': '🧪', 'iconoir': 'test-tube', 'color': '#ec4899'},
+        {'name': 'Biology', 'icon': '🧬', 'iconoir': 'dna', 'color': '#14b8a6'},
+        {'name': 'Computer Science', 'icon': '💻', 'iconoir': 'code', 'color': '#64748b'},
+        {'name': 'Literature', 'icon': '📖', 'iconoir': 'book', 'color': '#a855f7'},
+        {'name': 'Art', 'icon': '🎨', 'iconoir': 'palette', 'color': '#f43f5e'},
+        {'name': 'Music', 'icon': '🎵', 'iconoir': 'music-double-note', 'color': '#eab308'},
+    ]
+
+
+class SubjectProgress(db.Model):
+    """Track progress per subject"""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    subject_id = db.Column(db.Integer, db.ForeignKey('subject.id'), nullable=False)
+    questions_answered = db.Column(db.Integer, default=0)
+    correct_answers = db.Column(db.Integer, default=0)
+    study_minutes = db.Column(db.Integer, default=0)
+    sessions_count = db.Column(db.Integer, default=0)
+    last_studied = db.Column(db.DateTime)
+    
+    user = db.relationship('User', backref='subject_progress')
+    subject = db.relationship('Subject', backref='progress_records')
+
+
+# Association table for group chat members
+group_members = db.Table('group_members',
+    db.Column('group_id', db.Integer, db.ForeignKey('group_chat.id'), primary_key=True),
+    db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True),
+    db.Column('joined_at', db.DateTime, default=datetime.utcnow)
+)
+
+
+class GroupChat(db.Model):
+    """Group chat with multiple members"""
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    creator_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    theme = db.Column(db.String(20), default='purple')  # Chat theme color
+    avatar_url = db.Column(db.String(500))  # Group photo URL
+    
+    creator = db.relationship('User', foreign_keys=[creator_id])
+    members = db.relationship('User', secondary=group_members, backref='group_chats')
+    messages = db.relationship('GroupMessage', backref='group', lazy='dynamic', cascade='all, delete-orphan')
+
+
+class GroupMessage(db.Model):
+    """Messages in a group chat"""
+    id = db.Column(db.Integer, primary_key=True)
+    group_id = db.Column(db.Integer, db.ForeignKey('group_chat.id'), nullable=False)
+    sender_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    sent_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    sender = db.relationship('User', foreign_keys=[sender_id])

@@ -5,7 +5,7 @@ from flask import Blueprint, render_template, request, jsonify
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
 from datetime import datetime
-from models import db, StudyFile, StudySession, BotConversation
+from models import db, StudyFile, StudySession, BotConversation, Subject, SubjectProgress
 from services.bot import StudyBot
 import os
 
@@ -70,7 +70,8 @@ def allowed_file(filename):
 @login_required
 def study_page():
     files = StudyFile.query.filter_by(user_id=current_user.id).all()
-    return render_template('study.html', files=files)
+    subjects = Subject.query.filter_by(user_id=current_user.id).all()
+    return render_template('study.html', files=files, subjects=subjects)
 
 @study_bp.route('/chat/history/<int:file_id>')
 @login_required
@@ -119,36 +120,98 @@ def clear_chat_history(file_id):
 @study_bp.route('/upload', methods=['POST'])
 @login_required
 def upload_file():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file provided'}), 400
+    # Support both single file ('file') and multiple files ('files')
+    files = request.files.getlist('files')
     
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No file selected'}), 400
+    # Filter out empty file entries
+    files = [f for f in files if f and f.filename != '']
     
-    if file and allowed_file(file.filename):
+    if not files:
+        # Fallback for single file upload (backward compatibility)
+        single_file = request.files.get('file')
+        if single_file and single_file.filename != '':
+            files = [single_file]
+    
+    if not files:
+        return jsonify({'error': 'No files provided'}), 400
+    
+    subject_id = request.form.get('subject_id')
+    
+    # Require subject selection
+    if not subject_id:
+        return jsonify({'error': 'Please select a subject'}), 400
+    
+    uploaded_files = []
+    errors = []
+    
+    for file in files:
+        if file.filename == '':
+            continue
+            
+        if not allowed_file(file.filename):
+            errors.append(f'{file.filename}: File type not allowed')
+            continue
+        
         filename = secure_filename(file.filename)
         
         try:
             content = extract_text_from_file(file, filename)
             
             if not content or len(content.strip()) < 10:
-                return jsonify({'error': 'Could not extract text from file or file is empty'}), 400
+                errors.append(f'{file.filename}: Could not extract text or file is empty')
+                continue
             
             study_file = StudyFile(
                 user_id=current_user.id,
+                subject_id=int(subject_id) if subject_id else None,
                 filename=filename,
                 original_name=file.filename,
                 content=content
             )
             db.session.add(study_file)
-            db.session.commit()
+            db.session.flush()  # Get the ID before commit
             
-            return jsonify({'success': True, 'file_id': study_file.id, 'filename': filename})
+            # Get subject info for response
+            subject_info = None
+            if study_file.subject_id:
+                subject = Subject.query.get(study_file.subject_id)
+                if subject:
+                    subject_info = {
+                        'id': subject.id,
+                        'name': subject.name,
+                        'icon': subject.icon,
+                        'color': subject.color,
+                        'iconoir_icon': subject.iconoir_icon
+                    }
+            
+            uploaded_files.append({
+                'file_id': study_file.id,
+                'filename': filename,
+                'original_name': file.filename,
+                'uploaded_at': datetime.utcnow().strftime('%b %d'),
+                'subject': subject_info
+            })
+            
         except Exception as e:
-            return jsonify({'error': f'Error processing file: {str(e)}'}), 400
+            errors.append(f'{file.filename}: Error processing - {str(e)}')
     
-    return jsonify({'error': 'File type not allowed. Use .txt, .md, .docx, .pptx, .xlsx, or .pdf files'}), 400
+    if uploaded_files:
+        db.session.commit()
+        
+        response = {
+            'success': True,
+            'uploaded_count': len(uploaded_files),
+            'files': uploaded_files
+        }
+        
+        if errors:
+            response['warnings'] = errors
+        
+        return jsonify(response)
+    
+    # No files were uploaded successfully
+    error_msg = '; '.join(errors) if errors else 'No valid files to upload'
+    return jsonify({'error': error_msg}), 400
 
 from flask import session as flask_session
 
@@ -159,6 +222,7 @@ def bot_action():
     file_id = data.get('file_id')
     action = data.get('action')  # 'quiz', 'question', 'ask'
     user_input = data.get('input', '')
+    config = data.get('config', {})  # Quiz configuration: count, type
     
     study_file = StudyFile.query.get(file_id)
     if not study_file or study_file.user_id != current_user.id:
@@ -172,7 +236,10 @@ def bot_action():
     bot = StudyBot(study_file.content, conversation_history)
     
     if action == 'quiz':
-        result = bot.generate_quiz()
+        # Extract quiz configuration parameters
+        count = config.get('count', 5)
+        question_type = config.get('type', 'mixed')
+        result = bot.generate_quiz(num_questions=count, question_type=question_type)
     elif action == 'flashcards':
         result = bot.generate_flashcards()
     elif action == 'question':
@@ -221,6 +288,27 @@ def track_quiz():
         ended_at=datetime.utcnow()
     )
     db.session.add(session)
+    
+    # Update subject progress if file has a subject
+    if study_file and study_file.subject_id:
+        progress = SubjectProgress.query.filter_by(
+            user_id=current_user.id,
+            subject_id=study_file.subject_id
+        ).first()
+        
+        if not progress:
+            progress = SubjectProgress(
+                user_id=current_user.id,
+                subject_id=study_file.subject_id
+            )
+            db.session.add(progress)
+        
+        progress.questions_answered = (progress.questions_answered or 0) + total
+        progress.correct_answers = (progress.correct_answers or 0) + correct
+        progress.sessions_count = (progress.sessions_count or 0) + 1
+        progress.study_minutes = (progress.study_minutes or 0) + 5
+        progress.last_studied = datetime.utcnow()
+    
     db.session.commit()
     
     return jsonify({'success': True})
@@ -252,3 +340,29 @@ def end_session():
         return jsonify({'success': True})
     
     return jsonify({'error': 'Session not found'}), 404
+
+@study_bp.route('/file/delete/<int:file_id>', methods=['POST'])
+@login_required
+def delete_file(file_id):
+    """Delete a study file"""
+    study_file = StudyFile.query.get(file_id)
+    
+    if not study_file or study_file.user_id != current_user.id:
+        return jsonify({'error': 'File not found'}), 404
+    
+    # Delete associated chat history
+    BotConversation.query.filter_by(
+        user_id=current_user.id,
+        file_id=file_id
+    ).delete()
+    
+    # Clear bot memory for this file
+    history_key = f'bot_history_{current_user.id}_{file_id}'
+    if history_key in flask_session:
+        del flask_session[history_key]
+    
+    # Delete the file
+    db.session.delete(study_file)
+    db.session.commit()
+    
+    return jsonify({'success': True})

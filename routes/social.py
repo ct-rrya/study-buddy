@@ -1,9 +1,9 @@
 """
 Social Routes - Friends, Chat with Friend Requests
 """
-from flask import Blueprint, render_template, request, jsonify, redirect, url_for
+from flask import Blueprint, render_template, request, jsonify, redirect, url_for, current_app
 from flask_login import login_required, current_user
-from models import db, User, Message, FriendRequest, ChatTheme
+from models import db, User, Message, FriendRequest, ChatTheme, GroupChat, GroupMessage
 
 social_bp = Blueprint('social', __name__)
 
@@ -18,6 +18,11 @@ def friends_page():
     friends = current_user.get_friends()
     pending_requests = current_user.get_pending_requests()
     sent_requests = current_user.get_sent_requests()
+    
+    # Get user's group chats
+    group_chats = GroupChat.query.filter(
+        GroupChat.members.any(id=current_user.id)
+    ).all()
     
     # Get unread message counts and last message per friend
     unread_counts = {}
@@ -42,7 +47,8 @@ def friends_page():
         pending_requests=pending_requests,
         sent_requests=sent_requests,
         unread_counts=unread_counts,
-        last_messages=last_messages
+        last_messages=last_messages,
+        group_chats=group_chats
     )
 
 @social_bp.route('/friends/search', methods=['POST'])
@@ -90,8 +96,29 @@ def accept_request(request_id):
         # Notify the sender that their request was accepted
         from routes.sockets import notify_request_accepted
         notify_request_accepted(get_socketio(), friend_request.sender_id, current_user)
-        return jsonify({'success': True})
+        return jsonify({
+            'success': True,
+            'friend_id': friend_request.sender_id
+        })
     return jsonify({'error': 'Request not found'}), 404
+
+
+@social_bp.route('/friends/get-friend-card/<int:friend_id>')
+@login_required
+def get_friend_card(friend_id):
+    """Get friend data for dynamic card creation"""
+    friend = User.query.get(friend_id)
+    if not friend or not current_user.is_friend(friend):
+        return jsonify({'error': 'Friend not found'}), 404
+    
+    return jsonify({
+        'success': True,
+        'friend': {
+            'id': friend.id,
+            'username': friend.username,
+            'avatar_url': friend.get_avatar_url()
+        }
+    })
 
 @social_bp.route('/friends/decline/<int:request_id>', methods=['POST'])
 @login_required
@@ -231,3 +258,246 @@ def set_chat_theme(friend_id):
     
     db.session.commit()
     return jsonify({'success': True, 'theme': theme})
+
+
+# Group Chat Routes
+@social_bp.route('/groups/create', methods=['POST'])
+@login_required
+def create_group():
+    """Create a new group chat"""
+    data = request.json
+    name = data.get('name', '').strip()
+    member_ids = data.get('member_ids', [])
+    
+    if not name:
+        return jsonify({'error': 'Group name is required'}), 400
+    
+    if len(member_ids) < 2:
+        return jsonify({'error': 'Select at least 2 friends'}), 400
+    
+    # Verify all members are friends
+    friends = current_user.get_friends()
+    friend_ids = [f.id for f in friends]
+    
+    for member_id in member_ids:
+        if member_id not in friend_ids:
+            return jsonify({'error': 'You can only add friends to groups'}), 400
+    
+    # Create the group
+    group = GroupChat(
+        name=name,
+        creator_id=current_user.id
+    )
+    
+    # Add creator and selected members
+    group.members.append(current_user)
+    for member_id in member_ids:
+        member = User.query.get(member_id)
+        if member:
+            group.members.append(member)
+    
+    db.session.add(group)
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'group_id': group.id,
+        'name': group.name,
+        'member_count': len(group.members)
+    })
+
+
+@social_bp.route('/groups/<int:group_id>')
+@login_required
+def group_chat_page(group_id):
+    """Group chat page"""
+    group = GroupChat.query.get(group_id)
+    
+    if not group or current_user not in group.members:
+        return redirect(url_for('social.friends_page'))
+    
+    # Get messages
+    messages = GroupMessage.query.filter_by(group_id=group_id)\
+        .order_by(GroupMessage.sent_at.asc()).all()
+    
+    return render_template('group_chat.html', group=group, messages=messages)
+
+
+@social_bp.route('/groups/<int:group_id>/send', methods=['POST'])
+@login_required
+def send_group_message(group_id):
+    """Send a message to a group"""
+    group = GroupChat.query.get(group_id)
+    
+    if not group or current_user not in group.members:
+        return jsonify({'error': 'Not a member of this group'}), 403
+    
+    content = request.json.get('content', '').strip()
+    if not content:
+        return jsonify({'error': 'Message cannot be empty'}), 400
+    
+    message = GroupMessage(
+        group_id=group_id,
+        sender_id=current_user.id,
+        content=content
+    )
+    db.session.add(message)
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'message': {
+            'id': message.id,
+            'content': message.content,
+            'sender_id': message.sender_id,
+            'sender_name': current_user.username,
+            'sender_avatar': current_user.get_avatar_url(),
+            'sent_at': message.sent_at.isoformat()
+        }
+    })
+
+
+@social_bp.route('/groups/<int:group_id>/messages')
+@login_required
+def get_group_messages(group_id):
+    """Get new group messages for polling"""
+    group = GroupChat.query.get(group_id)
+    
+    if not group or current_user not in group.members:
+        return jsonify({'error': 'Not a member'}), 403
+    
+    last_id = request.args.get('last_id', 0, type=int)
+    
+    messages = GroupMessage.query.filter(
+        GroupMessage.group_id == group_id,
+        GroupMessage.id > last_id
+    ).order_by(GroupMessage.sent_at.asc()).all()
+    
+    return jsonify([{
+        'id': m.id,
+        'content': m.content,
+        'sender_id': m.sender_id,
+        'sender_name': m.sender.username,
+        'sender_avatar': m.sender.get_avatar_url(),
+        'sent_at': m.sent_at.isoformat()
+    } for m in messages])
+
+
+@social_bp.route('/groups/<int:group_id>/leave', methods=['POST'])
+@login_required
+def leave_group(group_id):
+    """Leave a group chat"""
+    group = GroupChat.query.get(group_id)
+    
+    if not group or current_user not in group.members:
+        return jsonify({'error': 'Not a member'}), 403
+    
+    group.members.remove(current_user)
+    
+    # If no members left, delete the group
+    if len(group.members) == 0:
+        db.session.delete(group)
+    
+    db.session.commit()
+    return jsonify({'success': True})
+
+
+@social_bp.route('/groups/<int:group_id>/settings', methods=['POST'])
+@login_required
+def update_group_settings(group_id):
+    """Update group settings (theme, avatar, name)"""
+    import base64
+    import os
+    import uuid
+    
+    group = GroupChat.query.get(group_id)
+    
+    if not group or current_user not in group.members:
+        return jsonify({'error': 'Not a member'}), 403
+    
+    data = request.json
+    print(f"[DEBUG] Received settings update for group {group_id}")
+    print(f"[DEBUG] Keys in data: {list(data.keys())}")
+    
+    # Update theme if provided
+    theme = data.get('theme')
+    if theme:
+        valid_themes = ['purple', 'blue', 'green', 'pink', 'orange', 'cyan']
+        if theme in valid_themes:
+            group.theme = theme
+            print(f"[DEBUG] Theme updated to: {theme}")
+    
+    # Handle base64 image upload
+    avatar_data = data.get('avatar_data')
+    if avatar_data:
+        print(f"[DEBUG] Received avatar_data, length: {len(avatar_data)}")
+        try:
+            # Parse base64 data URL
+            if ',' in avatar_data:
+                header, encoded = avatar_data.split(',', 1)
+                print(f"[DEBUG] Header: {header[:50]}...")
+                
+                # Get file extension from header
+                ext = 'png'
+                if 'jpeg' in header or 'jpg' in header:
+                    ext = 'jpg'
+                elif 'gif' in header:
+                    ext = 'gif'
+                elif 'webp' in header:
+                    ext = 'webp'
+                
+                # Decode and save
+                image_data = base64.b64decode(encoded)
+                print(f"[DEBUG] Decoded image size: {len(image_data)} bytes")
+                
+                # Create uploads directory if needed
+                upload_dir = os.path.join(current_app.root_path, 'static', 'uploads', 'groups')
+                os.makedirs(upload_dir, exist_ok=True)
+                print(f"[DEBUG] Upload dir: {upload_dir}")
+                
+                # Generate unique filename
+                filename = f"group_{group_id}_{uuid.uuid4().hex[:8]}.{ext}"
+                filepath = os.path.join(upload_dir, filename)
+                
+                # Delete old avatar if exists
+                if group.avatar_url and 'uploads/groups/' in group.avatar_url:
+                    old_path = os.path.join(current_app.root_path, 'static', group.avatar_url.replace('/static/', ''))
+                    if os.path.exists(old_path):
+                        os.remove(old_path)
+                        print(f"[DEBUG] Deleted old avatar: {old_path}")
+                
+                # Save new image
+                with open(filepath, 'wb') as f:
+                    f.write(image_data)
+                print(f"[DEBUG] Saved new avatar: {filepath}")
+                
+                group.avatar_url = f"/static/uploads/groups/{filename}"
+                print(f"[DEBUG] Set avatar_url to: {group.avatar_url}")
+        except Exception as e:
+            print(f"[ERROR] Error saving group avatar: {e}")
+            import traceback
+            traceback.print_exc()
+    elif data.get('avatar_url') == '':
+        # Clear avatar
+        print("[DEBUG] Clearing avatar")
+        if group.avatar_url and 'uploads/groups/' in group.avatar_url:
+            old_path = os.path.join(current_app.root_path, 'static', group.avatar_url.replace('/static/', ''))
+            if os.path.exists(old_path):
+                os.remove(old_path)
+        group.avatar_url = None
+    
+    # Update name if provided
+    name = data.get('name', '').strip()
+    if name:
+        group.name = name
+        print(f"[DEBUG] Name updated to: {name}")
+    
+    db.session.commit()
+    print(f"[DEBUG] Committed. Final avatar_url: {group.avatar_url}")
+    
+    return jsonify({
+        'success': True,
+        'theme': group.theme,
+        'avatar_url': group.avatar_url,
+        'name': group.name
+    })

@@ -1,0 +1,410 @@
+{% extends "base.html" %}
+{% block title %}{{ group.name }} - Study Buddy{% endblock %}
+
+{% block content %}
+<div class="chat-container group-chat" data-theme="{{ group.theme or 'purple' }}">
+    <div class="chat-header">
+        <a href="{{ url_for('social.friends_page') }}" class="back-btn">
+            <i class="iconoir-nav-arrow-left"></i>
+        </a>
+        <div class="chat-header-info" onclick="showGroupSettings()">
+            <div class="group-avatar-header" id="header-avatar" style="{% if group.avatar_url %}background-image: url('{{ group.avatar_url }}'); background-size: cover;{% endif %}">
+                {% if not group.avatar_url %}<i class="iconoir-group"></i>{% endif %}
+            </div>
+            <span class="chat-header-name" id="header-name">{{ group.name }}</span>
+        </div>
+        <div class="chat-header-actions">
+            <button onclick="showGroupSettings()" class="btn btn-small" title="Customize">
+                <i class="iconoir-palette"></i>
+            </button>
+            <button onclick="leaveGroup()" class="btn btn-small btn-danger" title="Leave group">
+                <i class="iconoir-log-out"></i>
+            </button>
+        </div>
+    </div>
+    
+    <div class="chat-messages" id="chat-messages">
+        <!-- Background shapes for theme -->
+        <div class="gc-bg-shapes">
+            <span class="gc-shape gc-shape-1"></span>
+            <span class="gc-shape gc-shape-2"></span>
+            <span class="gc-shape gc-shape-3"></span>
+            <span class="gc-shape gc-shape-4"></span>
+        </div>
+        {% for msg in messages %}
+        {% if msg.sender_id != current_user.id %}
+        <img src="{{ msg.sender.get_avatar_url() }}" class="msg-av"><span class="msg-sender">{{ msg.sender.username }}</span>
+        {% endif %}
+        <p class="msg-bubble {% if msg.sender_id == current_user.id %}sent{% else %}received{% endif %}" data-msg-id="{{ msg.id }}">{{ msg.content }}<span class="msg-ts">{{ msg.sent_at.strftime('%H:%M') }}</span></p>
+        {% endfor %}
+    </div>
+    
+    <div class="chat-input-container">
+        <textarea id="message-input" placeholder="Type a message..." rows="1"></textarea>
+        <button onclick="sendMessage()" class="send-btn">
+            <i class="iconoir-send"></i>
+        </button>
+    </div>
+</div>
+
+<!-- Group Settings Modal -->
+<div id="group-settings-modal" class="modal-overlay">
+    <div class="modal group-settings-modal-compact">
+        <div class="modal-header-row">
+            <h3><i class="iconoir-palette"></i> Customize</h3>
+            <button class="modal-close-btn" onclick="hideGroupSettings()"><i class="iconoir-xmark"></i></button>
+        </div>
+        <div class="modal-body-compact">
+            <!-- Top Row: Photo + Name -->
+            <div class="settings-top-row">
+                <div class="photo-upload-wrapper">
+                    <div class="group-photo-circle-sm" id="photo-preview" style="{% if group.avatar_url %}background-image: url('{{ group.avatar_url }}'); background-size: cover;{% endif %}">
+                        {% if not group.avatar_url %}<i class="iconoir-group"></i>{% endif %}
+                    </div>
+                    <label class="photo-upload-btn" for="group-photo-input">
+                        <i class="iconoir-camera"></i>
+                    </label>
+                    <input type="file" id="group-photo-input" accept="image/*" hidden>
+                    {% if group.avatar_url %}
+                    <button class="photo-remove-btn" onclick="clearGroupPhoto()" title="Remove photo">
+                        <i class="iconoir-xmark"></i>
+                    </button>
+                    {% endif %}
+                </div>
+                <div class="name-input-wrapper">
+                    <label>Group Name</label>
+                    <input type="text" id="group-name-edit" value="{{ group.name }}" placeholder="Group name...">
+                </div>
+            </div>
+            
+            <!-- Theme Selection -->
+            <div class="settings-section">
+                <label>Theme</label>
+                <div class="theme-grid-compact">
+                    {% for t in ['purple', 'blue', 'green', 'pink', 'orange', 'cyan'] %}
+                    <button class="theme-dot {% if (group.theme or 'purple') == t %}active{% endif %}" data-theme="{{ t }}" title="{{ t|capitalize }}">
+                        <span class="dot-color {{ t }}"></span>
+                    </button>
+                    {% endfor %}
+                </div>
+            </div>
+            
+            <!-- Members (collapsible) -->
+            <details class="members-details">
+                <summary>Members ({{ group.members|length }})</summary>
+                <div class="members-list-compact">
+                    {% for member in group.members %}
+                    <div class="member-chip">
+                        <img src="{{ member.get_avatar_url() }}" alt="{{ member.username }}">
+                        <span>{{ member.username }}</span>
+                        {% if member.id == group.creator_id %}<i class="iconoir-star" title="Creator"></i>{% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </details>
+        </div>
+        <div class="modal-actions-compact">
+            <button class="btn btn-secondary btn-small" onclick="hideGroupSettings()">Cancel</button>
+            <button class="btn btn-primary btn-small" onclick="saveGroupSettings()">Save</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+console.log('=== GROUP CHAT SCRIPT STARTING ===');
+
+const groupId = {{ group.id }};
+let lastMessageId = {{ messages[-1].id if messages else 0 }};
+let pollInterval;
+let currentTheme = '{{ group.theme or "purple" }}';
+
+function sendMessage() {
+    const input = document.getElementById('message-input');
+    const content = input.value.trim();
+    if (!content) return;
+    
+    fetch(`/groups/${groupId}/send`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({content: content})
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            appendMessage(data.message, true);
+            input.value = '';
+            input.style.height = 'auto';
+        }
+    });
+}
+
+function appendMessage(msg, isSent) {
+    const container = document.getElementById('chat-messages');
+    const time = new Date(msg.sent_at).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+    
+    if (!isSent) {
+        const av = document.createElement('img');
+        av.className = 'msg-av';
+        av.src = msg.sender_avatar;
+        container.appendChild(av);
+        
+        const name = document.createElement('span');
+        name.className = 'msg-sender';
+        name.textContent = msg.sender_name;
+        container.appendChild(name);
+    }
+    
+    const p = document.createElement('p');
+    p.className = `msg-bubble ${isSent ? 'sent' : 'received'}`;
+    p.dataset.msgId = msg.id;
+    p.innerHTML = `${escapeHtml(msg.content)}<span class="msg-ts">${time}</span>`;
+    container.appendChild(p);
+    
+    container.scrollTop = container.scrollHeight;
+    lastMessageId = msg.id;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function pollMessages() {
+    fetch(`/groups/${groupId}/messages?last_id=${lastMessageId}`)
+    .then(res => res.json())
+    .then(messages => {
+        messages.forEach(msg => {
+            if (msg.sender_id !== {{ current_user.id }}) {
+                appendMessage(msg, false);
+            }
+        });
+    });
+}
+
+// Group Settings Functions
+function showGroupSettings() {
+    document.getElementById('group-settings-modal').classList.add('active');
+}
+
+function hideGroupSettings() {
+    document.getElementById('group-settings-modal').classList.remove('active');
+}
+
+let uploadedPhotoData = null;
+let photoCleared = false;
+
+function clearGroupPhoto() {
+    uploadedPhotoData = null;
+    photoCleared = true;
+    const preview = document.getElementById('photo-preview');
+    preview.style.backgroundImage = 'none';
+    preview.innerHTML = '<i class="iconoir-group"></i>';
+    // Hide remove button
+    const removeBtn = document.querySelector('.photo-remove-btn');
+    if (removeBtn) removeBtn.style.display = 'none';
+}
+
+// Handle file upload for group photo
+document.getElementById('group-photo-input').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+        showToast('Please select an image file', 'error');
+        return;
+    }
+    
+    // Validate file size (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+        showToast('Image must be less than 2MB', 'error');
+        return;
+    }
+    
+    // Read and preview
+    const reader = new FileReader();
+    reader.onload = function(event) {
+        uploadedPhotoData = event.target.result;
+        photoCleared = false;
+        const preview = document.getElementById('photo-preview');
+        preview.style.backgroundImage = `url('${uploadedPhotoData}')`;
+        preview.style.backgroundSize = 'cover';
+        preview.innerHTML = '';
+        
+        // Show remove button
+        let removeBtn = document.querySelector('.photo-remove-btn');
+        if (!removeBtn) {
+            removeBtn = document.createElement('button');
+            removeBtn.className = 'photo-remove-btn';
+            removeBtn.title = 'Remove photo';
+            removeBtn.innerHTML = '<i class="iconoir-xmark"></i>';
+            removeBtn.onclick = clearGroupPhoto;
+            document.querySelector('.photo-upload-wrapper').appendChild(removeBtn);
+        }
+        removeBtn.style.display = 'flex';
+    };
+    reader.readAsDataURL(file);
+});
+
+function saveGroupSettings() {
+    const name = document.getElementById('group-name-edit').value.trim();
+    const activeTheme = document.querySelector('.theme-dot.active');
+    const theme = activeTheme ? activeTheme.dataset.theme : currentTheme;
+    
+    // Prepare data
+    const payload = {
+        name: name,
+        theme: theme
+    };
+    
+    // Include photo data if uploaded
+    if (uploadedPhotoData) {
+        payload.avatar_data = uploadedPhotoData;
+        console.log('[DEBUG] Sending avatar_data, length:', uploadedPhotoData.length);
+    } else if (photoCleared) {
+        payload.avatar_url = ''; // Clear avatar
+        console.log('[DEBUG] Clearing avatar');
+    }
+    
+    console.log('[DEBUG] Payload keys:', Object.keys(payload));
+    
+    fetch(`/groups/${groupId}/settings`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+    })
+    .then(res => {
+        console.log('[DEBUG] Response status:', res.status);
+        return res.json();
+    })
+    .then(data => {
+        console.log('[DEBUG] Response data:', data);
+        if (data.success) {
+            showToast('Settings saved!', 'success');
+            hideGroupSettings();
+            uploadedPhotoData = null;
+            photoCleared = false;
+            
+            // Update UI - theme
+            document.querySelector('.chat-container').dataset.theme = data.theme;
+            currentTheme = data.theme;
+            
+            // Update header name
+            document.getElementById('header-name').textContent = data.name;
+            
+            // Update header avatar
+            const headerAvatar = document.getElementById('header-avatar');
+            console.log('[DEBUG] Updating header avatar, avatar_url:', data.avatar_url);
+            if (data.avatar_url) {
+                // Add cache-busting parameter
+                const avatarUrl = data.avatar_url + '?t=' + Date.now();
+                headerAvatar.style.backgroundImage = `url('${avatarUrl}')`;
+                headerAvatar.style.backgroundSize = 'cover';
+                headerAvatar.innerHTML = '';
+                console.log('[DEBUG] Set header background to:', avatarUrl);
+            } else {
+                headerAvatar.style.backgroundImage = 'none';
+                headerAvatar.innerHTML = '<i class="iconoir-group"></i>';
+            }
+            
+            // Also update the modal preview
+            const modalPreview = document.getElementById('photo-preview');
+            if (data.avatar_url) {
+                const avatarUrl = data.avatar_url + '?t=' + Date.now();
+                modalPreview.style.backgroundImage = `url('${avatarUrl}')`;
+                modalPreview.style.backgroundSize = 'cover';
+                modalPreview.innerHTML = '';
+            } else {
+                modalPreview.style.backgroundImage = 'none';
+                modalPreview.innerHTML = '<i class="iconoir-group"></i>';
+            }
+        } else {
+            showToast(data.error || 'Could not save settings', 'error');
+        }
+    })
+    .catch(err => {
+        console.error('Error saving settings:', err);
+        showToast('Error saving settings', 'error');
+    });
+}
+
+// Theme dot click handlers
+document.querySelectorAll('.theme-dot').forEach(dot => {
+    dot.addEventListener('click', () => {
+        document.querySelectorAll('.theme-dot').forEach(d => d.classList.remove('active'));
+        dot.classList.add('active');
+    });
+});
+
+function leaveGroup() {
+    showConfirmModal(
+        'Leave Group',
+        'Are you sure you want to leave this group?',
+        () => {
+            fetch(`/groups/${groupId}/leave`, {method: 'POST'})
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    showToast('Left group', 'info');
+                    window.location.href = '{{ url_for("social.friends_page") }}';
+                }
+            });
+        },
+        'Leave',
+        true
+    );
+}
+
+// Auto-resize textarea
+document.getElementById('message-input').addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 100) + 'px';
+});
+
+// Send on Enter
+document.getElementById('message-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+    }
+});
+
+// Scroll to bottom on load
+document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight;
+
+// Start polling
+pollInterval = setInterval(pollMessages, 2000);
+
+// Close modal on outside click
+document.getElementById('group-settings-modal').addEventListener('click', function(e) {
+    if (e.target === this) hideGroupSettings();
+});
+
+// Add click listeners for settings (backup for onclick)
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM loaded, setting up group settings listeners');
+    
+    const headerInfo = document.querySelector('.chat-header-info');
+    if (headerInfo) {
+        headerInfo.style.cursor = 'pointer';
+        headerInfo.addEventListener('click', function(e) {
+            e.preventDefault();
+            console.log('Header info clicked');
+            showGroupSettings();
+        });
+    }
+    
+    const paletteBtn = document.querySelector('.chat-header-actions .btn-small:first-child');
+    if (paletteBtn) {
+        paletteBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            console.log('Palette button clicked');
+            showGroupSettings();
+        });
+    }
+});
+</script>
+{% endblock %}

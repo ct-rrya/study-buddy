@@ -28,6 +28,12 @@
     </div>
     
     <div id="chat-messages" class="chat-messages">
+        <div class="chat-bg-shapes">
+            <span class="shape shape-1"></span>
+            <span class="shape shape-2"></span>
+            <span class="shape shape-3"></span>
+            <span class="shape shape-4"></span>
+        </div>
         {% for msg in messages %}
         <div class="message {{ 'sent' if msg.sender_id == current_user.id else 'received' }}">
             <div class="message-content">{{ msg.content }}</div>
@@ -38,8 +44,8 @@
     
     <div class="chat-input-container">
         <input type="text" id="message-input" placeholder="Type a message...">
-        <button onclick="sendMessage()" class="btn btn-primary">
-            <i class="iconoir-send"></i> Send
+        <button onclick="sendMessage()" class="send-btn">
+            <i class="iconoir-send"></i>
         </button>
     </div>
 </div>

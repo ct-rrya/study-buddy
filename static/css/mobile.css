@@ -44,13 +44,22 @@ body {
     height: 30px;
 }
 
-.nav-user-link {
+.nav-right {
     order: 2;
+    gap: 0.5rem;
+}
+
+.nav-user-link {
     padding: 0.25rem;
 }
 
 .nav-user-link span {
     display: none; /* Hide username text */
+}
+
+.theme-toggle {
+    width: 36px;
+    height: 36px;
 }
 
 .nav-avatar {
@@ -816,8 +825,13 @@ p, .message, .motivation-text {
 }
 
 .message-time {
-    font-size: 0.65rem;
+    font-size: 0.7rem;
     margin-top: 0.25rem;
+    color: rgba(255, 255, 255, 0.75);
+}
+
+.received .message-time { 
+    color: var(--text-soft); 
 }
 
 .chat-input-container {
@@ -1199,5 +1213,303 @@ p, .message, .motivation-text {
     
     .flashcard-back p {
         font-size: 0.8rem;
+    }
+}
+
+
+/* === SUBJECT FILTER BAR (Mobile) === */
+.subject-filter-bar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    padding: 0.6rem;
+    gap: 0.4rem;
+    margin-bottom: 0.75rem;
+}
+
+.subject-filter-bar::-webkit-scrollbar {
+    display: none;
+}
+
+.filter-chip {
+    padding: 0.4rem 0.7rem;
+    font-size: 0.75rem;
+    border-radius: 16px;
+    flex-shrink: 0;
+}
+
+.filter-chip i {
+    font-size: 0.9rem;
+}
+
+.filter-chip-name {
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.no-filter-results {
+    padding: 1.5rem;
+    font-size: 0.85rem;
+}
+
+/* === QUIZ SETTINGS MODAL (Mobile) === */
+.quiz-modal {
+    max-width: calc(100vw - 1.5rem);
+}
+
+.quiz-modal h3 {
+    font-size: 1.1rem;
+    gap: 0.5rem;
+}
+
+.quiz-modal h3 i {
+    font-size: 1.2rem;
+}
+
+.quiz-settings-body {
+    gap: 1.25rem;
+    margin-bottom: 1.5rem;
+}
+
+.quiz-setting-label {
+    font-size: 0.85rem;
+}
+
+.setting-options {
+    gap: 0.4rem;
+}
+
+.setting-option {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8rem;
+    border-radius: 8px;
+}
+
+.setting-options[data-setting="type"] .setting-option {
+    flex: 1 1 calc(50% - 0.2rem);
+    min-width: 100px;
+    padding: 0.5rem 0.5rem;
+}
+
+.quiz-modal .modal-actions {
+    flex-direction: row;
+    gap: 0.5rem;
+}
+
+.quiz-modal .modal-actions .btn {
+    flex: 1;
+}
+
+
+/* === FULLSCREEN FLASHCARD MODE (Mobile) === */
+.fullscreen-overlay {
+    padding: 1rem;
+}
+
+.fullscreen-exit {
+    top: 1rem;
+    right: 1rem;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+}
+
+.fullscreen-exit i {
+    font-size: 1.3rem;
+}
+
+.fullscreen-progress {
+    top: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.85rem;
+    padding: 0.4rem 0.8rem;
+    border-radius: 16px;
+    background: rgba(0, 0, 0, 0.5);
+}
+
+.fullscreen-card-container {
+    max-width: 100%;
+    padding: 0 0.5rem;
+    margin-top: 3rem;
+}
+
+.fullscreen-card-container .flashcard-inner {
+    height: 280px;
+}
+
+.fullscreen-card-container .flashcard-front,
+.fullscreen-card-container .flashcard-back {
+    padding: 1.25rem;
+    border-radius: 16px;
+}
+
+.fullscreen-card-container .flashcard-front p {
+    font-size: 1.3rem;
+}
+
+.fullscreen-card-container .flashcard-back p {
+    font-size: 1.1rem;
+}
+
+.fullscreen-card-container .flip-hint {
+    font-size: 0.7rem;
+    bottom: 1rem;
+}
+
+.fullscreen-nav {
+    margin-top: 1rem;
+    gap: 2rem;
+}
+
+.fullscreen-nav .fs-nav-btn {
+    width: 50px;
+    height: 50px;
+    min-width: 50px;
+    min-height: 50px;
+}
+
+.fullscreen-nav .fs-nav-btn i {
+    font-size: 1.3rem;
+}
+
+.fullscreen-controls {
+    flex-direction: row;
+    gap: 0.75rem;
+    margin-top: 1rem;
+    padding: 0 0.5rem;
+    width: 100%;
+    max-width: 400px;
+}
+
+.fullscreen-controls .fc-btn {
+    flex: 1;
+    padding: 0.85rem 1rem;
+    font-size: 0.9rem;
+    border-radius: 10px;
+    justify-content: center;
+}
+
+.fullscreen-controls .fc-btn i {
+    font-size: 1rem;
+}
+
+/* Touch-friendly tap targets for fullscreen */
+.fullscreen-card-container .flashcard {
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* Swipe hint for touch devices */
+.fullscreen-swipe-hint {
+    position: absolute;
+    bottom: 0.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    opacity: 0.7;
+}
+
+/* === SUBJECT SELECTOR EMPTY STATE (Mobile) === */
+.subject-selector-empty {
+    padding: 1.25rem;
+    border-radius: 10px;
+}
+
+.subject-selector-empty p {
+    font-size: 0.85rem;
+    margin-bottom: 0.6rem;
+}
+
+.subject-selector-empty .btn {
+    padding: 0.5rem 1rem;
+    font-size: 0.8rem;
+}
+
+/* === SUBJECT CARD SELECTOR (Mobile) === */
+.subject-selector-section {
+    margin: 0.75rem 0;
+}
+
+.subject-selector-label {
+    font-size: 0.85rem;
+    margin-bottom: 0.5rem;
+}
+
+.subject-card-grid {
+    gap: 0.5rem;
+    grid-template-columns: repeat(2, 1fr);
+}
+
+.subject-select-card {
+    padding: 0.6rem 0.5rem;
+    border-radius: 10px;
+    min-height: 60px;
+}
+
+.subject-card-icon {
+    font-size: 1.1rem;
+}
+
+.subject-card-name {
+    font-size: 0.75rem;
+}
+
+.subject-card-check {
+    width: 18px;
+    height: 18px;
+}
+
+.subject-card-check i {
+    font-size: 0.7rem;
+}
+
+/* === EXTRA SMALL SCREENS - FULLSCREEN MODE === */
+@media (max-width: 380px) {
+    .fullscreen-card-container .flashcard-inner {
+        height: 240px;
+    }
+    
+    .fullscreen-card-container .flashcard-front p {
+        font-size: 1.1rem;
+    }
+    
+    .fullscreen-card-container .flashcard-back p {
+        font-size: 1rem;
+    }
+    
+    .fullscreen-controls .fc-btn {
+        padding: 0.7rem 0.75rem;
+        font-size: 0.8rem;
+    }
+    
+    .fullscreen-nav .fs-nav-btn {
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
+    }
+    
+    .subject-card-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.4rem;
+    }
+    
+    .subject-select-card {
+        padding: 0.5rem 0.4rem;
+        min-height: 55px;
+    }
+    
+    .subject-card-icon {
+        font-size: 1rem;
+    }
+    
+    .subject-card-name {
+        font-size: 0.7rem;
     }
 }

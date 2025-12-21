@@ -2,6 +2,67 @@
 {% block title %}Study - Study Buddy{% endblock %}
 
 {% block content %}
+<!-- Quiz Settings Modal -->
+<div id="quiz-settings-modal" class="modal-overlay">
+    <div class="modal quiz-modal">
+        <h3><i class="iconoir-clipboard-check"></i> Quiz Settings</h3>
+        <div class="quiz-settings-body">
+            <div class="quiz-setting">
+                <label class="quiz-setting-label">Number of Questions</label>
+                <div class="setting-options" data-setting="count">
+                    <button type="button" class="setting-option" data-value="5">5</button>
+                    <button type="button" class="setting-option active" data-value="10">10</button>
+                    <button type="button" class="setting-option" data-value="15">15</button>
+                    <button type="button" class="setting-option" data-value="20">20</button>
+                </div>
+            </div>
+            <div class="quiz-setting">
+                <label class="quiz-setting-label">Question Type</label>
+                <div class="setting-options" data-setting="type">
+                    <button type="button" class="setting-option" data-value="multiple_choice">Multiple Choice</button>
+                    <button type="button" class="setting-option" data-value="identification">Identification</button>
+                    <button type="button" class="setting-option" data-value="true_false">True/False</button>
+                    <button type="button" class="setting-option active" data-value="mixed">Mixed</button>
+                </div>
+            </div>
+        </div>
+        <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" onclick="hideQuizSettings()">Cancel</button>
+            <button type="button" class="btn btn-primary" onclick="generateQuizWithSettings()">
+                <i class="iconoir-play"></i> Generate Quiz
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Fullscreen Flashcard Mode -->
+<div id="flashcard-fullscreen" class="fullscreen-overlay hidden" role="dialog" aria-modal="true" aria-label="Fullscreen flashcard mode">
+    <button class="fullscreen-exit" onclick="exitFullscreen()" aria-label="Exit fullscreen">
+        <i class="iconoir-xmark"></i>
+    </button>
+    <div class="fullscreen-progress">
+        Card <span class="fs-current">1</span> of <span class="fs-total">10</span>
+    </div>
+    <div class="fullscreen-card-container">
+        <!-- Flashcard content will be cloned here -->
+    </div>
+    <div class="fullscreen-nav">
+        <button class="fs-nav-btn" onclick="fullscreenNav(-1)" aria-label="Previous card">
+            <i class="iconoir-nav-arrow-left"></i>
+        </button>
+        <button class="fs-nav-btn" onclick="fullscreenNav(1)" aria-label="Next card">
+            <i class="iconoir-nav-arrow-right"></i>
+        </button>
+    </div>
+    <div class="fullscreen-controls">
+        <button class="fc-btn fc-didnt-know" onclick="fullscreenResponse(false)">
+            <i class="iconoir-xmark"></i> Still Learning
+        </button>
+        <button class="fc-btn fc-knew" onclick="fullscreenResponse(true)">
+            <i class="iconoir-check"></i> Got It!
+        </button>
+    </div>
+</div>
 <div class="study-container">
     <h1>Study Session 📖</h1>
     
@@ -9,12 +70,46 @@
         <h2>Upload Study Material</h2>
         <p>Supported: .txt, .md, .docx, .pptx, .xlsx, .pdf</p>
         <form id="upload-form" enctype="multipart/form-data">
-            <div class="file-input-wrapper">
-                <label for="file-input" class="file-input-label">
-                    <i class="iconoir-upload"></i>
-                    <span id="file-label-text">Choose a file or drag it here</span>
-                </label>
-                <input type="file" id="file-input" name="file" accept=".txt,.md,.docx,.pptx,.xlsx,.pdf">
+            <div class="upload-row">
+                <div class="file-input-wrapper">
+                    <label for="file-input" class="file-input-label">
+                        <i class="iconoir-upload"></i>
+                        <span id="file-label-text">Choose files or drag them here</span>
+                    </label>
+                    <input type="file" id="file-input" name="files" accept=".txt,.md,.docx,.pptx,.xlsx,.pdf" multiple>
+                </div>
+            </div>
+            
+            <!-- Subject Card Selector -->
+            <div class="subject-selector-section">
+                <label class="subject-selector-label">Select Subject:</label>
+                {% if subjects %}
+                <div class="subject-card-grid" role="group" aria-label="Subject selection">
+                    {% for subject in subjects %}
+                    <button type="button" 
+                            class="subject-select-card" 
+                            data-subject-id="{{ subject.id }}"
+                            data-selected="false"
+                            aria-pressed="false"
+                            style="--subject-color: {{ subject.color }}">
+                        <i class="iconoir-{{ subject.iconoir_icon }} subject-card-icon"></i>
+                        <span class="subject-card-name">{{ subject.name }}</span>
+                        <div class="subject-card-check">
+                            <i class="iconoir-check"></i>
+                        </div>
+                    </button>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="subject-selector-empty">
+                    <p>No subjects added yet!</p>
+                    <a href="{{ url_for('dashboard.stats') }}" class="btn btn-small btn-primary">
+                        <i class="iconoir-plus"></i> Add subjects in Dashboard
+                    </a>
+                </div>
+                {% endif %}
+                <!-- Hidden input to store selected subject ID -->
+                <input type="hidden" id="subject-select" name="subject_id" value="">
             </div>
             <button type="submit" class="btn btn-primary"><i class="iconoir-cloud-upload"></i> Upload</button>
         </form>
@@ -23,20 +118,47 @@
     
     <section class="files-section">
         <h2>Your Study Files</h2>
+        
+        <!-- Subject Filter Bar -->
+        <div class="subject-filter-bar" role="toolbar" aria-label="Filter files by subject">
+            <button class="filter-chip active" data-filter="all" aria-pressed="true">
+                <i class="iconoir-view-grid"></i> All
+            </button>
+            {% for subject in subjects %}
+            <button class="filter-chip" data-filter="{{ subject.id }}" aria-pressed="false">
+                <i class="iconoir-{{ subject.iconoir_icon }}"></i>
+                <span class="filter-chip-name">{{ subject.name }}</span>
+            </button>
+            {% endfor %}
+        </div>
+        
         <div class="files-list">
             {% if files %}
                 {% for file in files %}
-                <div class="file-card" data-file-id="{{ file.id }}">
+                <div class="file-card" data-file-id="{{ file.id }}" data-subject-id="{{ file.subject.id if file.subject else '' }}">
+                    {% if file.subject %}
+                    <span class="file-subject-badge" style="background: {{ file.subject.color }}20; color: {{ file.subject.color }}">
+                        {{ file.subject.icon }} {{ file.subject.name }}
+                    </span>
+                    {% endif %}
                     <i class="iconoir-page file-icon"></i>
                     <span class="file-name">{{ file.original_name }}</span>
                     <span class="file-date">{{ file.uploaded_at.strftime('%b %d') }}</span>
-                    <button class="btn btn-small" onclick="selectFile({{ file.id }}, '{{ file.original_name }}')">Study</button>
+                    <div class="file-actions">
+                        <button class="btn btn-small" onclick="selectFile({{ file.id }}, '{{ file.original_name }}')">Study</button>
+                        <button class="btn btn-small btn-danger file-delete-btn" onclick="deleteFile({{ file.id }}, '{{ file.original_name }}')" title="Delete file">
+                            <i class="iconoir-trash"></i>
+                        </button>
+                    </div>
                 </div>
                 {% endfor %}
             {% else %}
                 <p class="no-data">No files uploaded yet. Upload your study notes above!</p>
             {% endif %}
         </div>
+        
+        <!-- Empty filter results message (hidden by default) -->
+        <p class="no-filter-results hidden">No files found for selected subjects.</p>
     </section>
     
     <section id="study-area" class="study-area hidden">
@@ -46,7 +168,7 @@
         </div>
         
         <div class="bot-actions">
-            <button class="action-btn" onclick="botAction('quiz')">
+            <button class="action-btn" onclick="showQuizSettings()">
                 <i class="iconoir-clipboard-check"></i> Generate Quiz
             </button>
             <button class="action-btn" onclick="botAction('flashcards')">
@@ -75,6 +197,273 @@ let currentFileId = null;
 let currentQuestion = null;
 let currentFileName = null;
 let studyStartTime = null;
+
+// Quiz Settings State Management
+const quizSettings = {
+    count: sessionStorage.getItem('quizCount') || '10',
+    type: sessionStorage.getItem('quizType') || 'mixed',
+    
+    save() {
+        sessionStorage.setItem('quizCount', this.count);
+        sessionStorage.setItem('quizType', this.type);
+    },
+    
+    getConfig() {
+        return {
+            count: parseInt(this.count),
+            type: this.type
+        };
+    }
+};
+
+// Initialize quiz settings from session storage
+function initQuizSettings() {
+    const modal = document.getElementById('quiz-settings-modal');
+    if (!modal) return;
+    
+    // Set active states based on saved settings
+    const countOptions = modal.querySelectorAll('[data-setting="count"] .setting-option');
+    const typeOptions = modal.querySelectorAll('[data-setting="type"] .setting-option');
+    
+    countOptions.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.value === quizSettings.count);
+    });
+    
+    typeOptions.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.value === quizSettings.type);
+    });
+    
+    // Add click handlers for setting options
+    modal.querySelectorAll('.setting-option').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const settingGroup = btn.closest('.setting-options');
+            const settingType = settingGroup.dataset.setting;
+            
+            // Remove active from siblings
+            settingGroup.querySelectorAll('.setting-option').forEach(b => b.classList.remove('active'));
+            
+            // Add active to clicked
+            btn.classList.add('active');
+            
+            // Update settings
+            if (settingType === 'count') {
+                quizSettings.count = btn.dataset.value;
+            } else if (settingType === 'type') {
+                quizSettings.type = btn.dataset.value;
+            }
+        });
+    });
+    
+    // Close modal on overlay click
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            hideQuizSettings();
+        }
+    });
+    
+    // Close modal on Escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal.classList.contains('active')) {
+            hideQuizSettings();
+        }
+    });
+}
+
+function showQuizSettings() {
+    if (!currentFileId) {
+        showToast('Please select a file first', 'warning');
+        return;
+    }
+    const modal = document.getElementById('quiz-settings-modal');
+    if (modal) {
+        modal.classList.add('active');
+    }
+}
+
+function hideQuizSettings() {
+    const modal = document.getElementById('quiz-settings-modal');
+    if (modal) {
+        modal.classList.remove('active');
+    }
+}
+
+function generateQuizWithSettings() {
+    // Save settings to session storage
+    quizSettings.save();
+    
+    // Hide modal
+    hideQuizSettings();
+    
+    // Generate quiz with configuration
+    if (!currentFileId) return;
+    
+    // Show loading indicator
+    const loadingId = showLoading();
+    
+    fetch('/bot/action', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            file_id: currentFileId,
+            action: 'quiz',
+            config: quizSettings.getConfig()
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        hideLoading(loadingId);
+        if (data.type === 'quiz') {
+            displayQuiz(data);
+        } else if (data.type === 'message') {
+            addBotMessage(data.response);
+        }
+    })
+    .catch(err => {
+        hideLoading(loadingId);
+        addBotMessage("Oops, something went wrong. Try again! 😅");
+    });
+}
+
+// Initialize quiz settings on page load
+document.addEventListener('DOMContentLoaded', initQuizSettings);
+
+// Subject Card Selection
+function initSubjectCardSelector() {
+    const cards = document.querySelectorAll('.subject-select-card');
+    const hiddenInput = document.getElementById('subject-select');
+    
+    cards.forEach(card => {
+        card.addEventListener('click', () => {
+            toggleSubjectCard(card, cards, hiddenInput);
+        });
+        
+        // Keyboard support
+        card.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                toggleSubjectCard(card, cards, hiddenInput);
+            }
+        });
+    });
+}
+
+function toggleSubjectCard(card, allCards, hiddenInput) {
+    const isSelected = card.dataset.selected === 'true';
+    
+    // Deselect all cards first (single selection mode)
+    allCards.forEach(c => {
+        c.dataset.selected = 'false';
+        c.setAttribute('aria-pressed', 'false');
+    });
+    
+    if (!isSelected) {
+        // Select this card
+        card.dataset.selected = 'true';
+        card.setAttribute('aria-pressed', 'true');
+        hiddenInput.value = card.dataset.subjectId;
+    } else {
+        // Deselect (no subject selected)
+        hiddenInput.value = '';
+    }
+}
+
+// Initialize subject card selector on page load
+document.addEventListener('DOMContentLoaded', initSubjectCardSelector);
+
+// Subject Filter State Management
+const filterState = {
+    selectedFilters: ['all'],
+    
+    toggle(filterId) {
+        if (filterId === 'all') {
+            // Reset to show all
+            this.selectedFilters = ['all'];
+        } else {
+            // Remove 'all' if selecting specific filter
+            const allIndex = this.selectedFilters.indexOf('all');
+            if (allIndex > -1) {
+                this.selectedFilters.splice(allIndex, 1);
+            }
+            
+            // Toggle the specific filter
+            const index = this.selectedFilters.indexOf(filterId);
+            if (index > -1) {
+                this.selectedFilters.splice(index, 1);
+                // If no filters left, reset to 'all'
+                if (this.selectedFilters.length === 0) {
+                    this.selectedFilters = ['all'];
+                }
+            } else {
+                this.selectedFilters.push(filterId);
+            }
+        }
+        this.apply();
+    },
+    
+    apply() {
+        const fileCards = document.querySelectorAll('.file-card');
+        const filterChips = document.querySelectorAll('.filter-chip');
+        const noDataMsg = document.querySelector('.files-list .no-data');
+        const noFilterResults = document.querySelector('.no-filter-results');
+        const filesList = document.querySelector('.files-list');
+        
+        // Update filter chip states
+        filterChips.forEach(chip => {
+            const filterId = chip.dataset.filter;
+            const isActive = this.selectedFilters.includes(filterId) || 
+                           (filterId === 'all' && this.selectedFilters.includes('all'));
+            chip.classList.toggle('active', isActive);
+            chip.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        });
+        
+        // Filter file cards
+        let visibleCount = 0;
+        fileCards.forEach(card => {
+            const subjectId = card.dataset.subjectId;
+            const shouldShow = this.selectedFilters.includes('all') || 
+                             this.selectedFilters.includes(subjectId);
+            card.style.display = shouldShow ? '' : 'none';
+            if (shouldShow) visibleCount++;
+        });
+        
+        // Show/hide empty state messages
+        if (noDataMsg) {
+            noDataMsg.style.display = fileCards.length === 0 ? '' : 'none';
+        }
+        if (noFilterResults) {
+            noFilterResults.classList.toggle('hidden', visibleCount > 0 || fileCards.length === 0);
+        }
+    },
+    
+    reset() {
+        this.selectedFilters = ['all'];
+        this.apply();
+    }
+};
+
+// Initialize Subject Filter Bar
+function initSubjectFilterBar() {
+    const filterChips = document.querySelectorAll('.filter-chip');
+    
+    filterChips.forEach(chip => {
+        chip.addEventListener('click', () => {
+            const filterId = chip.dataset.filter;
+            filterState.toggle(filterId);
+        });
+        
+        // Keyboard support
+        chip.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                const filterId = chip.dataset.filter;
+                filterState.toggle(filterId);
+            }
+        });
+    });
+}
+
+// Initialize filter bar on page load
+document.addEventListener('DOMContentLoaded', initSubjectFilterBar);
 
 function selectFile(fileId, fileName) {
     currentFileId = fileId;
@@ -183,6 +572,9 @@ function displayFlashcards(data) {
                 <span class="fc-knew">✓ <span class="knew-count">0</span></span>
                 <span class="fc-learning">✗ <span class="learning-count">0</span></span>
             </div>
+            <button class="btn btn-small btn-fullscreen" onclick="enterFullscreen()">
+                <i class="iconoir-expand"></i> Full Screen
+            </button>
         </div>
         <div class="flashcard-deck">`;
     
@@ -291,6 +683,246 @@ function flashcardNav(direction) {
         cards[newIndex].classList.add('active');
         container.dataset.current = newIndex;
         container.querySelector('.fc-current').textContent = newIndex + 1;
+    }
+}
+
+// Fullscreen Flashcard Mode State
+const fullscreenState = {
+    originalCardIndex: 0,
+    isActive: false,
+    knewCount: 0,
+    learningCount: 0
+};
+
+function enterFullscreen() {
+    const container = document.querySelector('.flashcard-container');
+    if (!container) {
+        showToast('No flashcards to display', 'warning');
+        return;
+    }
+    
+    const fullscreenOverlay = document.getElementById('flashcard-fullscreen');
+    const fullscreenContainer = fullscreenOverlay.querySelector('.fullscreen-card-container');
+    
+    // Store original state for restoration
+    fullscreenState.originalCardIndex = parseInt(container.dataset.current);
+    fullscreenState.isActive = true;
+    fullscreenState.knewCount = parseInt(container.querySelector('.knew-count').textContent);
+    fullscreenState.learningCount = parseInt(container.querySelector('.learning-count').textContent);
+    
+    // Clone flashcard deck to fullscreen container
+    const deck = container.querySelector('.flashcard-deck');
+    fullscreenContainer.innerHTML = '';
+    const clonedDeck = deck.cloneNode(true);
+    fullscreenContainer.appendChild(clonedDeck);
+    
+    // Update progress indicator
+    const total = parseInt(container.dataset.total);
+    const current = parseInt(container.dataset.current);
+    fullscreenOverlay.querySelector('.fs-current').textContent = current + 1;
+    fullscreenOverlay.querySelector('.fs-total').textContent = total;
+    
+    // Store data attributes on fullscreen container
+    fullscreenContainer.dataset.current = current;
+    fullscreenContainer.dataset.total = total;
+    
+    // Add click handlers for flipping in fullscreen
+    fullscreenContainer.querySelectorAll('.flashcard').forEach(card => {
+        card.addEventListener('click', () => card.classList.toggle('flipped'));
+    });
+    
+    // Show fullscreen overlay
+    fullscreenOverlay.classList.remove('hidden');
+    document.body.classList.add('fullscreen-active');
+    
+    // Add keyboard event listener
+    document.addEventListener('keydown', handleFullscreenKeydown);
+    
+    // Add touch event listeners for swipe
+    initFullscreenSwipe();
+}
+
+function exitFullscreen() {
+    const fullscreenOverlay = document.getElementById('flashcard-fullscreen');
+    const container = document.querySelector('.flashcard-container');
+    
+    if (container && fullscreenState.isActive) {
+        // Restore original card position
+        const cards = container.querySelectorAll('.flashcard');
+        const fullscreenContainer = fullscreenOverlay.querySelector('.fullscreen-card-container');
+        const currentFullscreenIndex = parseInt(fullscreenContainer.dataset.current);
+        
+        // Update original container to match fullscreen state
+        cards.forEach(card => card.classList.remove('active'));
+        if (cards[currentFullscreenIndex]) {
+            cards[currentFullscreenIndex].classList.add('active');
+        }
+        container.dataset.current = currentFullscreenIndex;
+        container.querySelector('.fc-current').textContent = currentFullscreenIndex + 1;
+        
+        // Sync marked states from fullscreen to original
+        const fullscreenCards = fullscreenContainer.querySelectorAll('.flashcard');
+        fullscreenCards.forEach((fsCard, index) => {
+            if (fsCard.classList.contains('marked-knew')) {
+                cards[index].classList.add('marked-knew');
+            }
+            if (fsCard.classList.contains('marked-learning')) {
+                cards[index].classList.add('marked-learning');
+            }
+        });
+    }
+    
+    // Hide fullscreen overlay
+    fullscreenOverlay.classList.add('hidden');
+    document.body.classList.remove('fullscreen-active');
+    fullscreenState.isActive = false;
+    
+    // Remove keyboard event listener
+    document.removeEventListener('keydown', handleFullscreenKeydown);
+}
+
+function handleFullscreenKeydown(e) {
+    if (!fullscreenState.isActive) return;
+    
+    switch(e.key) {
+        case 'Escape':
+            exitFullscreen();
+            break;
+        case 'ArrowLeft':
+            e.preventDefault();
+            fullscreenNav(-1);
+            break;
+        case 'ArrowRight':
+            e.preventDefault();
+            fullscreenNav(1);
+            break;
+        case ' ':
+            e.preventDefault();
+            // Flip current card on spacebar
+            const container = document.querySelector('#flashcard-fullscreen .fullscreen-card-container');
+            const current = parseInt(container.dataset.current);
+            const cards = container.querySelectorAll('.flashcard');
+            if (cards[current]) {
+                cards[current].classList.toggle('flipped');
+            }
+            break;
+    }
+}
+
+function fullscreenNav(direction) {
+    const fullscreenOverlay = document.getElementById('flashcard-fullscreen');
+    const container = fullscreenOverlay.querySelector('.fullscreen-card-container');
+    if (!container) return;
+    
+    const current = parseInt(container.dataset.current);
+    const total = parseInt(container.dataset.total);
+    const cards = container.querySelectorAll('.flashcard');
+    
+    const newIndex = current + direction;
+    if (newIndex >= 0 && newIndex < total) {
+        cards[current].classList.remove('active');
+        cards[newIndex].classList.add('active');
+        cards[newIndex].classList.remove('flipped'); // Reset flip state
+        container.dataset.current = newIndex;
+        fullscreenOverlay.querySelector('.fs-current').textContent = newIndex + 1;
+    }
+}
+
+function fullscreenResponse(knew) {
+    const fullscreenOverlay = document.getElementById('flashcard-fullscreen');
+    const container = fullscreenOverlay.querySelector('.fullscreen-card-container');
+    if (!container) return;
+    
+    const current = parseInt(container.dataset.current);
+    const total = parseInt(container.dataset.total);
+    const cards = container.querySelectorAll('.flashcard');
+    
+    // Mark current card
+    if (knew) {
+        cards[current].classList.add('marked-knew');
+        fullscreenState.knewCount++;
+    } else {
+        cards[current].classList.add('marked-learning');
+        fullscreenState.learningCount++;
+    }
+    
+    // Also update the original container
+    const originalContainer = document.querySelector('.flashcard-container');
+    if (originalContainer) {
+        const originalCards = originalContainer.querySelectorAll('.flashcard');
+        if (knew) {
+            originalCards[current].classList.add('marked-knew');
+            originalContainer.querySelector('.knew-count').textContent = fullscreenState.knewCount;
+        } else {
+            originalCards[current].classList.add('marked-learning');
+            originalContainer.querySelector('.learning-count').textContent = fullscreenState.learningCount;
+        }
+    }
+    
+    // Move to next card or finish
+    if (current < total - 1) {
+        cards[current].classList.remove('active');
+        cards[current + 1].classList.add('active');
+        cards[current + 1].classList.remove('flipped');
+        container.dataset.current = current + 1;
+        fullscreenOverlay.querySelector('.fs-current').textContent = current + 2;
+    } else {
+        // Finished all cards - exit fullscreen and show results
+        exitFullscreen();
+        
+        const percent = Math.round((fullscreenState.knewCount / total) * 100);
+        let msg = `**Flashcard session complete!** 🎉\n\n`;
+        msg += `✓ Got it: ${fullscreenState.knewCount}/${total} (${percent}%)\n`;
+        msg += `✗ Still learning: ${fullscreenState.learningCount}/${total}\n\n`;
+        
+        if (percent === 100) {
+            msg += "Perfect! You've mastered these cards! 🌟";
+        } else if (percent >= 70) {
+            msg += "Great progress! Keep reviewing the ones you missed! 💪";
+        } else {
+            msg += "Keep practicing! You'll get there! 📚";
+        }
+        
+        addBotMessage(msg);
+    }
+}
+
+// Touch swipe navigation for fullscreen mode
+function initFullscreenSwipe() {
+    const fullscreenOverlay = document.getElementById('flashcard-fullscreen');
+    const container = fullscreenOverlay.querySelector('.fullscreen-card-container');
+    
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let touchEndX = 0;
+    let touchEndY = 0;
+    const minSwipeDistance = 50; // Minimum distance for a swipe
+    
+    container.addEventListener('touchstart', (e) => {
+        touchStartX = e.changedTouches[0].screenX;
+        touchStartY = e.changedTouches[0].screenY;
+    }, { passive: true });
+    
+    container.addEventListener('touchend', (e) => {
+        touchEndX = e.changedTouches[0].screenX;
+        touchEndY = e.changedTouches[0].screenY;
+        handleSwipe();
+    }, { passive: true });
+    
+    function handleSwipe() {
+        const deltaX = touchEndX - touchStartX;
+        const deltaY = touchEndY - touchStartY;
+        
+        // Only handle horizontal swipes (ignore vertical)
+        if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > minSwipeDistance) {
+            if (deltaX > 0) {
+                // Swipe right - go to previous card
+                fullscreenNav(-1);
+            } else {
+                // Swipe left - go to next card
+                fullscreenNav(1);
+            }
+        }
     }
 }
 
@@ -460,7 +1092,12 @@ function sendMessage() {
         if (data.type === 'answer') {
             addBotMessage(data.response);
         } else if (data.type === 'feedback') {
-            addBotMessage(data.message);
+            let response = data.message;
+            // Add GIF if available
+            if (data.gif && data.gif.url) {
+                response += `\n\n<img src="${data.gif.url}" alt="reaction gif" class="feedback-gif">`;
+            }
+            addBotMessage(response, true, data.gif ? true : false);
         }
         currentQuestion = null;
     })
@@ -579,6 +1216,48 @@ function clearChat() {
     );
 }
 
+function deleteFile(fileId, fileName) {
+    showConfirmModal(
+        'Delete File',
+        `Are you sure you want to delete "${fileName}"? This will also delete all chat history for this file.`,
+        () => {
+            fetch(`/file/delete/${fileId}`, {method: 'POST'})
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    showToast('File deleted', 'success');
+                    // If this was the currently selected file, clear the study area
+                    if (currentFileId === fileId) {
+                        currentFileId = null;
+                        document.getElementById('study-area').classList.add('hidden');
+                    }
+                    // Remove the file card from DOM without page refresh
+                    const fileCard = document.querySelector(`.file-card[data-file-id="${fileId}"]`);
+                    if (fileCard) {
+                        fileCard.style.opacity = '0';
+                        fileCard.style.transform = 'translateX(-20px)';
+                        setTimeout(() => {
+                            fileCard.remove();
+                            // Check if no files left
+                            const remainingFiles = document.querySelectorAll('.file-card');
+                            if (remainingFiles.length === 0) {
+                                document.querySelector('.files-list').innerHTML = '<p class="no-data">No files uploaded yet. Upload your study notes above!</p>';
+                            }
+                        }, 300);
+                    }
+                } else {
+                    showToast(data.error || 'Could not delete file', 'error');
+                }
+            })
+            .catch(() => {
+                showToast('Error deleting file', 'error');
+            });
+        },
+        'Delete',
+        true
+    );
+}
+
 // Auto-resize textarea as user types
 document.getElementById('user-input').addEventListener('input', function() {
     this.style.height = 'auto';
@@ -587,31 +1266,73 @@ document.getElementById('user-input').addEventListener('input', function() {
 
 document.getElementById('file-input').addEventListener('change', function() {
     const label = document.getElementById('file-label-text');
-    if (this.files.length > 0) {
+    if (this.files.length > 1) {
+        label.innerHTML = '<span class="file-name-display">' + this.files.length + ' files selected</span>';
+    } else if (this.files.length === 1) {
         label.innerHTML = '<span class="file-name-display">' + this.files[0].name + '</span>';
     } else {
-        label.textContent = 'Choose a file or drag it here';
+        label.textContent = 'Choose files or drag them here';
     }
 });
 
 document.getElementById('upload-form').addEventListener('submit', (e) => {
     e.preventDefault();
     const fileInput = document.getElementById('file-input');
-    if (!fileInput.files.length) {
-        showToast('Please select a file first', 'warning');
+    const subjectSelect = document.getElementById('subject-select');
+    
+    // Require subject selection first
+    if (!subjectSelect.value) {
+        showToast('Please select a subject first', 'warning');
         return;
     }
-    const formData = new FormData();
-    formData.append('file', fileInput.files[0]);
     
-    showToast('Uploading file...', 'info', 2000);
+    if (!fileInput.files.length) {
+        showToast('Please select at least one file', 'warning');
+        return;
+    }
+    
+    const formData = new FormData();
+    // Append all selected files
+    for (let i = 0; i < fileInput.files.length; i++) {
+        formData.append('files', fileInput.files[i]);
+    }
+    formData.append('subject_id', subjectSelect.value);
+    
+    const fileCount = fileInput.files.length;
+    showToast(`Uploading ${fileCount} file${fileCount > 1 ? 's' : ''}...`, 'info', 3000);
     
     fetch('/upload', {method: 'POST', body: formData})
     .then(res => res.json())
     .then(data => {
         if (data.success) {
-            showToast('File uploaded successfully!', 'success');
-            setTimeout(() => location.reload(), 500);
+            const uploadedCount = data.uploaded_count || 1;
+            showToast(`${uploadedCount} file${uploadedCount > 1 ? 's' : ''} uploaded successfully!`, 'success');
+            
+            // Add files to the list dynamically without page refresh
+            const filesList = document.querySelector('.files-list');
+            const noDataMsg = filesList.querySelector('.no-data');
+            if (noDataMsg) noDataMsg.remove();
+            
+            data.files.forEach(file => {
+                const fileCard = createFileCard(file);
+                filesList.insertBefore(fileCard, filesList.firstChild);
+                // Animate in
+                setTimeout(() => {
+                    fileCard.style.opacity = '1';
+                    fileCard.style.transform = 'translateX(0)';
+                }, 10);
+            });
+            
+            // Reset form
+            fileInput.value = '';
+            document.getElementById('file-label-text').textContent = 'Choose files or drag them here';
+            
+            // Deselect subject cards
+            document.querySelectorAll('.subject-select-card').forEach(card => {
+                card.dataset.selected = 'false';
+                card.setAttribute('aria-pressed', 'false');
+            });
+            subjectSelect.value = '';
         } else {
             showToast(data.error || 'Upload failed', 'error');
         }
@@ -620,5 +1341,38 @@ document.getElementById('upload-form').addEventListener('submit', (e) => {
         showToast('Upload failed. Please try again.', 'error');
     });
 });
+
+// Helper function to create a file card element
+function createFileCard(file) {
+    const div = document.createElement('div');
+    div.className = 'file-card';
+    div.dataset.fileId = file.file_id;
+    div.dataset.subjectId = file.subject ? file.subject.id : '';
+    div.style.opacity = '0';
+    div.style.transform = 'translateX(20px)';
+    div.style.transition = 'all 0.3s ease';
+    
+    let subjectBadge = '';
+    if (file.subject) {
+        subjectBadge = `<span class="file-subject-badge" style="background: ${file.subject.color}20; color: ${file.subject.color}">
+            ${file.subject.icon} ${file.subject.name}
+        </span>`;
+    }
+    
+    div.innerHTML = `
+        ${subjectBadge}
+        <i class="iconoir-page file-icon"></i>
+        <span class="file-name">${file.original_name}</span>
+        <span class="file-date">${file.uploaded_at}</span>
+        <div class="file-actions">
+            <button class="btn btn-small" onclick="selectFile(${file.file_id}, '${file.original_name.replace(/'/g, "\\'")}')">Study</button>
+            <button class="btn btn-small btn-danger file-delete-btn" onclick="deleteFile(${file.file_id}, '${file.original_name.replace(/'/g, "\\'")}')" title="Delete file">
+                <i class="iconoir-trash"></i>
+            </button>
+        </div>
+    `;
+    
+    return div;
+}
 </script>
 {% endblock %}
