@@ -9,6 +9,7 @@ env/
 # Environment variables (IMPORTANT - contains secrets!)
 .env
 .env.local
+.vercel
 
 # Database
 instance/

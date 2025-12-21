@@ -5,6 +5,7 @@ Flask-Mail==0.10.0
 Werkzeug==3.0.1
 python-dotenv
 gunicorn
+psycopg2-binary
 groq
 markdown
 pygments
@@ -12,3 +13,4 @@ python-pptx
 python-docx
 openpyxl
 PyPDF2
+sqlalchemy

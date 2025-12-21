@@ -810,14 +810,7 @@ body {
 }
 #message-input:focus { outline: none; border-color: var(--primary); }
 
-/* Responsive */
-@media (max-width: 768px) {
-    .motivation-section, .stats-grid { grid-template-columns: 1fr; }
-    .action-buttons { flex-direction: column; }
-    .navbar { flex-direction: column; gap: 1rem; padding: 1rem; }
-    .nav-links { flex-wrap: wrap; justify-content: center; }
-    .chat-messages { height: 350px; }
-}
+/* Responsive - see mobile.css for mobile styles */
 
 /* Scrollbar Global */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -1075,9 +1068,7 @@ body {
     border: 2px solid var(--primary);
 }
 
-@media (max-width: 768px) {
-    .profile-grid { grid-template-columns: 1fr; }
-}
+/* Profile grid responsive - see mobile.css */
 
 /* Friend/Request Avatar Images */
 .friend-avatar-img, .request-avatar-img {
@@ -1558,3 +1549,6 @@ body {
     color: white;
     border-color: var(--primary);
 }
+
+
+/* Mobile styles moved to mobile.css */
