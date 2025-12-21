@@ -48,50 +48,83 @@
 {% block scripts %}
 <script>
 const friendId = {{ friend.id }};
-let lastMessageId = {{ messages[-1].id if messages else 0 }};
+const currentUserId = {{ current_user.id }};
+let typingTimeout;
+
+// Join the chat room
+socket.emit('join_chat', {friend_id: friendId});
+
+// Handle incoming messages
+socket.on('new_message', (msg) => {
+    // Only add if we didn't send it (sender already sees their message)
+    if (msg.sender_id !== currentUserId) {
+        addMessage(msg.content, false, msg.sent_at_formatted);
+    }
+});
+
+// Handle typing indicators
+socket.on('user_typing', (data) => {
+    showTypingIndicator(data.username);
+});
+
+socket.on('user_stop_typing', () => {
+    hideTypingIndicator();
+});
 
 function sendMessage() {
     const input = document.getElementById('message-input');
     const content = input.value.trim();
     if (!content) return;
     
-    fetch('/chat/send', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({receiver_id: friendId, content: content})
-    })
-    .then(res => res.json())
-    .then(data => {
-        if (data.success) {
-            addMessage(data.message.content, true);
-            lastMessageId = data.message.id;
-            input.value = '';
-        }
+    // Send via Socket.IO
+    socket.emit('send_message', {
+        receiver_id: friendId,
+        content: content
     });
+    
+    // Immediately show the message (optimistic UI)
+    addMessage(content, true);
+    input.value = '';
+    
+    // Stop typing indicator
+    socket.emit('stop_typing', {friend_id: friendId});
 }
 
-function addMessage(content, isSent) {
+function addMessage(content, isSent, time = null) {
     const div = document.createElement('div');
     div.className = `message ${isSent ? 'sent' : 'received'}`;
+    const displayTime = time || new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
     div.innerHTML = `
-        <div class="message-content">${content}</div>
-        <div class="message-time">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+        <div class="message-content">${escapeHtml(content)}</div>
+        <div class="message-time">${displayTime}</div>
     `;
     document.getElementById('chat-messages').appendChild(div);
-    div.scrollIntoView();
+    div.scrollIntoView({behavior: 'smooth'});
 }
 
-function pollMessages() {
-    fetch(`/chat/messages/${friendId}?last_id=${lastMessageId}`)
-    .then(res => res.json())
-    .then(messages => {
-        messages.forEach(msg => {
-            if (msg.sender_id !== {{ current_user.id }}) {
-                addMessage(msg.content, false);
-            }
-            lastMessageId = Math.max(lastMessageId, msg.id);
-        });
-    });
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function showTypingIndicator(username) {
+    let indicator = document.getElementById('typing-indicator');
+    if (!indicator) {
+        indicator = document.createElement('div');
+        indicator.id = 'typing-indicator';
+        indicator.className = 'typing-indicator';
+        document.getElementById('chat-messages').appendChild(indicator);
+    }
+    indicator.innerHTML = `<span>${username} is typing...</span>`;
+    indicator.style.display = 'block';
+}
+
+function hideTypingIndicator() {
+    const indicator = document.getElementById('typing-indicator');
+    if (indicator) {
+        indicator.style.display = 'none';
+    }
 }
 
 function toggleThemePicker() {
@@ -107,24 +140,35 @@ function setTheme(theme) {
     .then(res => res.json())
     .then(data => {
         if (data.success) {
-            // Update the chat container theme
             document.querySelector('.chat-container').dataset.theme = theme;
-            // Update active button
             document.querySelectorAll('.theme-btn').forEach(btn => btn.classList.remove('active'));
             document.querySelector(`.theme-btn[onclick="setTheme('${theme}')"]`).classList.add('active');
-            // Hide picker
             document.getElementById('theme-picker').classList.add('hidden');
             showToast('Theme updated!', 'success');
         }
     });
 }
 
-document.getElementById('message-input').addEventListener('keypress', (e) => {
+const messageInput = document.getElementById('message-input');
+
+messageInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') sendMessage();
 });
 
-// Poll for new messages every 3 seconds
-setInterval(pollMessages, 3000);
+// Typing indicator logic
+messageInput.addEventListener('input', () => {
+    socket.emit('typing', {friend_id: friendId});
+    
+    clearTimeout(typingTimeout);
+    typingTimeout = setTimeout(() => {
+        socket.emit('stop_typing', {friend_id: friendId});
+    }, 1000);
+});
+
+// Leave chat room when navigating away
+window.addEventListener('beforeunload', () => {
+    socket.emit('leave_chat', {friend_id: friendId});
+});
 
 // Scroll to bottom on load
 document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight;

@@ -7,6 +7,11 @@ from models import db, User, Message, FriendRequest, ChatTheme
 
 social_bp = Blueprint('social', __name__)
 
+# Get socketio instance (will be set after app initialization)
+def get_socketio():
+    from app import socketio
+    return socketio
+
 @social_bp.route('/friends')
 @login_required
 def friends_page():
@@ -68,6 +73,9 @@ def send_request(user_id):
     if user and user.id != current_user.id:
         if current_user.send_friend_request(user):
             db.session.commit()
+            # Send real-time notification
+            from routes.sockets import notify_friend_request
+            notify_friend_request(get_socketio(), user_id, current_user)
             return jsonify({'success': True, 'message': 'Friend request sent!'})
         return jsonify({'error': 'Request already exists'}), 400
     return jsonify({'error': 'User not found'}), 404
@@ -79,6 +87,9 @@ def accept_request(request_id):
     if friend_request and friend_request.receiver_id == current_user.id:
         friend_request.status = 'accepted'
         db.session.commit()
+        # Notify the sender that their request was accepted
+        from routes.sockets import notify_request_accepted
+        notify_request_accepted(get_socketio(), friend_request.sender_id, current_user)
         return jsonify({'success': True})
     return jsonify({'error': 'Request not found'}), 404
 

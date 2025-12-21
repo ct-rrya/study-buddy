@@ -7,6 +7,7 @@ load_dotenv()  # Load environment variables from .env file
 from flask import Flask
 from flask_login import LoginManager
 from flask_mail import Mail
+from flask_socketio import SocketIO
 from config import Config
 from models import db, User
 
@@ -17,6 +18,7 @@ app.config.from_object(Config)
 # Initialize extensions
 db.init_app(app)
 mail = Mail(app)
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 login_manager = LoginManager(app)
 login_manager.login_view = 'auth.login'
 
@@ -36,9 +38,13 @@ app.register_blueprint(dashboard_bp)
 app.register_blueprint(study_bp)
 app.register_blueprint(social_bp)
 
+# Import and register socket events
+from routes.sockets import register_socket_events
+register_socket_events(socketio)
+
 # Create database tables
 with app.app_context():
     db.create_all()
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    socketio.run(app, debug=True)

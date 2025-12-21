@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/mobile.css') }}" media="(max-width: 768px)">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/iconoir-icons/iconoir@main/css/iconoir.css">
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 </head>
 <body>
     {% if current_user.is_authenticated %}
@@ -63,6 +64,55 @@
     <div id="toast-container"></div>
     
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    {% if current_user.is_authenticated %}
+    <script>
+        // Initialize Socket.IO connection
+        const socket = io();
+        
+        socket.on('connect', () => {
+            console.log('Connected to real-time server');
+        });
+        
+        // Handle friend request notifications
+        socket.on('friend_request', (data) => {
+            showToast(`${data.sender_username} sent you a friend request!`, 'info', 5000);
+            updateNotificationBadge(1);
+        });
+        
+        // Handle request accepted notifications
+        socket.on('request_accepted', (data) => {
+            showToast(`${data.friend_username} accepted your friend request!`, 'success', 5000);
+        });
+        
+        // Handle message notifications (when not in chat)
+        socket.on('message_notification', (data) => {
+            // Only show if not currently chatting with this person
+            if (!window.location.pathname.includes(`/chat/${data.from_id}`)) {
+                showToast(`New message from ${data.from_user}: ${data.preview}`, 'info', 4000);
+            }
+        });
+        
+        // Update notification badge in navbar
+        function updateNotificationBadge(increment) {
+            const badge = document.querySelector('.nav-badge');
+            if (badge) {
+                let count = parseInt(badge.textContent) || 0;
+                count += increment;
+                badge.textContent = count < 10 ? count : '9+';
+                badge.style.display = count > 0 ? 'inline-flex' : 'none';
+            } else if (increment > 0) {
+                // Create badge if it doesn't exist
+                const friendsLink = document.querySelector('a[href*="friends"]');
+                if (friendsLink) {
+                    const newBadge = document.createElement('span');
+                    newBadge.className = 'nav-badge';
+                    newBadge.textContent = increment;
+                    friendsLink.appendChild(newBadge);
+                }
+            }
+        }
+    </script>
+    {% endif %}
     <script>
         // Toast Notification System
         function showToast(message, type = 'info', duration = 3000) {

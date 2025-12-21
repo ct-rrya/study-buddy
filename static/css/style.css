@@ -513,6 +513,15 @@ body {
 .chat-messages::-webkit-scrollbar-track { background: transparent; }
 .chat-messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
+/* Typing Indicator */
+.typing-indicator {
+    padding: 0.5rem 1rem;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    font-style: italic;
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
 .message {
     padding: 1rem 1.25rem;
     border-radius: 16px;
